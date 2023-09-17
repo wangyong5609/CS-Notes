@@ -43,13 +43,15 @@ services:
     restart: unless-stopped                                       # 指定容器退出后的重启策略为始终重启，但是不考虑在Docker守护进程启动时就已经停止了的容器
     volumes:                            # 数据卷挂载路径设置,将本机目录映射到容器目录
       - "/docker/nginx/conf/nginx.conf:/etc/nginx/nginx.conf"
-      - "/docker/nginx/conf/conf.d/default.conf:/etc/nginx/conf.d/default.conf"
+      - "/docker/nginx/conf/conf.d:/etc/nginx/conf.d"
       - "/docker/nginx/html:/usr/share/nginx/html"
       - "/docker/nginx/log:/var/log/nginx"
+      - "/docker/nginx/cert:/etc/nginx/cert"
     environment:                        # 设置环境变量,相当于docker run命令中的-e
       TZ: Asia/Shanghai
       LANG: en_US.UTF-8
     ports:                              # 映射端口
       - "80:80"
+      - "443:443"
 ~~~
 
