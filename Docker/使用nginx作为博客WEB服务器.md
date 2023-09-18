@@ -1,4 +1,13 @@
-1. 创建nginx容器
+1. 创建文件目录
+
+   ~~~bash
+   mkdir -p /docker/nginx/conf/conf.d /docker/nginx/html /docker/nginx/log /docker/nginx/cert
+   touch /docker/nginx/conf/nginx.conf
+   ~~~
+
+   
+
+2. 创建nginx容器
 
    ~~~bash
    docker run -itd --name nginx -p 80:80 -p 443:443 \
@@ -23,7 +32,7 @@
    - -v /docker/nginx/cert:/etc/nginx/cert
      - /etc/nginx/cert 是我自己创建用来存放SSL证书的目录
 
-2. 申请SSL证书
+3. 申请SSL证书
 
    网上有很多获取证书的方法，这里就不赘述了。我申请的阿里云的免费证书，可以参考[这篇文章](https://developer.aliyun.com/article/790697#:~:text=%E9%98%BF%E9%87%8C%E4%BA%91%E5%85%8D%E8%B4%B9SSL%E8%AF%81%E4%B9%A6%EF%BC%88%E5%8E%9FDIgicert%E5%85%8D%E8%B4%B9%E5%8D%95%E5%9F%9F%E5%90%8D%E8%AF%81%E4%B9%A6%EF%BC%89%EF%BC%8C%E6%AF%8F%E4%B8%AA%E9%98%BF%E9%87%8C%E4%BA%91%E8%B4%A6%E5%8F%B7%E4%B8%80%E4%B8%AA%E8%87%AA%E7%84%B6%E5%B9%B4%E9%99%90%E5%88%B6%E7%94%B3%E8%AF%B720%E4%B8%AA%E5%85%8D%E8%B4%B9SSL%E8%AF%81%E4%B9%A6%EF%BC%8C%E9%98%BF%E5%B0%8F%E4%BA%91%E6%9D%A5%E8%AF%A6%E7%BB%86%E8%AF%B4%E4%B8%8B%E9%98%BF%E9%87%8C%E4%BA%91%E5%85%8D%E8%B4%B9SSL%E8%AF%81%E4%B9%A6%E7%94%B3%E8%AF%B7%E6%95%99%E7%A8%8B%E5%8F%8A%E9%99%90%E5%88%B6%E8%AF%B4%E6%98%8E%EF%BC%9A%20%E9%98%BF%E9%87%8C%E4%BA%91SSL%E5%85%8D%E8%B4%B9%E8%AF%81%E4%B9%A6%E7%94%B3%E8%AF%B7%E6%95%99%E7%A8%8B%20%E5%9C%A8,%E9%98%BF%E9%87%8C%E4%BA%91SSL%E8%AF%81%E4%B9%A6%E9%A1%B5%E9%9D%A2%20%EF%BC%8C%E7%82%B9%E5%87%BB%E2%80%9C%E9%80%89%E8%B4%ADSSL%E8%AF%81%E4%B9%A6%E2%80%9D%EF%BC%8C%E5%9C%A8%E6%89%93%E5%BC%80%E7%9A%84%E9%A1%B5%E9%9D%A2%E9%80%89%E6%8B%A9%E2%80%9CDV%E5%8D%95%E5%9F%9F%E5%90%8D%E8%AF%81%E4%B9%A6%E3%80%90%E5%85%8D%E8%B4%B9%E8%AF%95%E7%94%A8%E3%80%91%E2%80%9D%E5%A6%82%E4%B8%8B%E5%9B%BE%EF%BC%9A%20%E6%95%B0%E9%87%8F%E4%B8%BA20%E4%B8%AA%EF%BC%8C%E9%80%89%E6%8B%A920%E4%B8%AA%E6%98%AF%E5%85%8D%E8%B4%B9%E7%9A%84%EF%BC%8C%E5%A6%82%E6%9E%9C%E9%80%89%E6%8B%A940%E3%80%8150%E6%88%96100%E6%98%AF%E9%9C%80%E8%A6%81%E4%BB%98%E8%B4%B9%E7%9A%84%EF%BC%8C%E4%B8%80%E8%88%AC%E6%9D%A5%E8%AE%B220%E4%B8%AA%E5%85%8D%E8%B4%B9SSL%E8%B6%B3%E5%A4%9F%E7%94%A8%E4%BA%86%E3%80%82%20%E7%84%B6%E5%90%8E%E7%82%B9%E2%80%9C%E7%AB%8B%E5%8D%B3%E8%B4%AD%E4%B9%B0%E2%80%9D%EF%BC%8C%E6%94%AF%E4%BB%980%E5%85%83%E5%8D%B3%E5%8F%AF%E3%80%82)
 
@@ -34,9 +43,47 @@
    scswww.bbbwdc.com.crt  scswww.bbbwdc.com.key
    ~~~
 
-3. 网站配置
+4. 网站配置
 
 > 如果是云服务器，请确保安全组规则允许访问80和443端口
+
+/docker/nginx/conf/nginx.conf
+
+~~~ngin
+user  root;
+worker_processes  auto;
+
+error_log  /var/log/nginx/error.log notice;
+pid        /var/run/nginx.pid;
+
+
+events {
+    worker_connections  1024;
+}
+
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile        on;
+    #tcp_nopush     on;
+
+    keepalive_timeout  65;
+
+    #gzip  on;
+
+    include /etc/nginx/conf.d/*.conf;
+}
+~~~
+
+
 
 我的网站配置：/docker/nginx/conf/conf.d/bbbwdc.conf
 
