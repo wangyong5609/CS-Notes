@@ -32,6 +32,7 @@ cp php.ini-production php.ini
 
 4. 修改文件上传限制
 
+
 在php.ini中找到 **upload_max_filesize = 2M**, 修改后退出并重启容器。
 
 5. 检查是否生效
