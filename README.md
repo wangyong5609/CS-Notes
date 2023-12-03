@@ -16,6 +16,8 @@
 ## TODO
 ⭕ idea 插件合集
 
+⭕ Centos7 安装MySQL5.7
+
 ✅ Linux用户环境导致的日期格式化问题
 
 ✅ 初探信号量机制
