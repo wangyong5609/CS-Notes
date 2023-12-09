@@ -61,3 +61,164 @@ Kibana是一个开源的分析与可视化平台，设计出来用于和Elastics
 ### ES物理部署
 
 #### ES单机部署
+
+##### 下载Elasticsearch
+
+> 我们下载的Elasticsearch 版本是 7.17.5，安装目录：/opt，下载地址
+>
+> https://www.elastic.co/cn/downloads/past-releases/elasticsearch-7-17-5
+
+```bash
+wget https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.17.5-linux-x86_64.tar.gz
+tar -zvxf elasticsearch-7.17.5-linux-x86_64.tar.gz
+```
+
+##### 配置Elasticsearch
+
+###### 关闭防火墙
+
+```bash
+systemctl status firewalld.service
+systemctl stop firewalld.service
+systemctl disable firewalld.service
+```
+
+###### 配置elasticsearch.yml
+
+> 该配置文件是ES的主配置文件
+>
+
+```bash
+cd /opt/elasticsearch-7.17.5 && vi config/elasticsearch.yml
+```
+
+```yml
+#设置允许访问地址，配置位0.0.0.0允许任意主机访问
+- #network.host: 192.168.0.1
++ network.host: 0.0.0.0
+
+# 配置集群, 这里只配置node-1一台
+# node.name: node-1
++ node.name: node-1
+- #discovery.seed_hosts: ["host1", "host2"]
++ discovery.seed_hosts: ["node-1"]
+- #cluster.initial_master_nodes: ["node-1", "node-2"]
++ cluster.initial_master_nodes: ["node-1"]
+```
+
+##### 修改Linux句柄数
+
+> 为什么要改？因为ES需要创建大量的内存映射区域（mapped memory areas），vm.max_map_count用于限制一个进程可以拥有的VMA（虚拟内存映射区域）数量，如果vm.max_map_count过低，可能导致OOM，ES性能下降等问题
+
+###### 查看当前最大句柄数
+
+```bash
+sysctl -a | grep vm.max_map_count
+```
+
+###### 修改句柄数
+
+```bash
+vi /etc/sysctl.conf
+```
+
+```
+vm.max_map_count=262144
+```
+
+###### 生效配置
+
+> 修改后需要重启才能生效，不想重启可以设置临时生效
+
+```
+sysctl -w vm.max_map_count=262144
+```
+
+##### 关闭swap
+
+> 因为ES的数据大量都是常驻内存的，一旦使用了虚拟内存就会导致查询速度下降，一般需要关闭swap，但是要保证有足够的内存
+
+###### 临时关闭
+
+```
+swapoff -a
+```
+
+###### 永久关闭
+
+```
+vi /etc/fstab
+```
+
+> 注释掉 swap 这一行的配置
+
+![image-20231209210259282](./ELK%E5%B9%B3%E5%8F%B0%E6%90%AD%E5%BB%BA.assets/image-20231209210259282.png)
+
+##### 修改最大线程数
+
+> 因为ES运行期间可能创建大量线程，如果线程数支持较少可能报错
+
+###### 配置修改
+
+> 修改后需要重新登录生效
+
+```
+vi /etc/security/limits.conf
+```
+
+```
+# 添加以下内容
+* soft nofile 65536
+* hard nofile 65536
+* soft nproc 4096
+* hard nproc 4096
+```
+
+###### 重启服务
+
+```
+reboot
+```
+
+##### 创建ES用户
+
+> 注意ES不能以 root 用户启动，否则会报错
+
+###### 添加用户
+
+> 密码有强度验证，可以使用命令`openssl rand -base64 12`生成一个密码使用
+
+```
+useradd es
+# 密码：yWntzbX2hpHrDkTp
+passwd es
+```
+
+###### 增加管理员权限
+
+使用`visudo`命令打开`/etc/sudoer`文件
+
+```
+visudo
+```
+
+```
++ es ALL=(ALL) ALL
+```
+
+###### 修改Elasticsearch权限
+
+```
+chown -R es:es elasticsearch-7.17.5
+chmod -R 755 /opt/elasticsearch-7.17.5/config/elasticsearch.keystore
+```
+
+##### 启动测试
+
+```
+/opt/elasticsearch-7.17.5/bin/elasticsearch
+```
+
+在浏览器打开`http://192.168.88.30:9200/`，显示以下信息就启动成功了
+
+![image-20231209214906899](./ELK%E5%B9%B3%E5%8F%B0%E6%90%AD%E5%BB%BA.assets/image-20231209214906899.png)
