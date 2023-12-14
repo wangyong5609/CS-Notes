@@ -210,7 +210,6 @@ visudo
 
 ```
 chown -R es:es elasticsearch-7.17.5
-chmod -R 755 /opt/elasticsearch-7.17.5/config/elasticsearch.keystore
 ```
 
 ### JVM配置
@@ -325,7 +324,7 @@ mv kibana-7.17.5-linux-x86_64 kibana-7.17.5
 #### 配置 Kibana
 
 ```
-vi config/kibana.yml
+vi kibana-7.17.5/config/kibana.yml
 - #server.port: 5601
 + server.port: 5601
 
@@ -338,6 +337,14 @@ vi config/kibana.yml
 + elasticsearch.hosts: ["http://localhost:9200"]
 ```
 
+#### 修改用户组
+
+```
+chown -R es:es /opt/kibana-7.17.5/
+```
+
+
+
 #### 启动 Kibana
 
 ##### 切换用户
@@ -345,7 +352,7 @@ vi config/kibana.yml
 > Kibana也不能以root用户运行，需要切换到`elasticsearch权限`
 
 ```
-su elasticsearch
+su es
 ```
 
 ##### 启动kibaba
@@ -363,5 +370,59 @@ nohup sh bin/kibana  >/dev/null 2>&1 &
 > 访问对应宿主机的`5601`端口
 
 ```
-http://192.168.245.151:5601/
+http://192.168.88.30:5601/
 ```
+
+### Logstash安装
+
+> Logstash 版本 7.17.5 下载地址：`https://www.elastic.co/cn/downloads/past-releases/logstash-7-17-5`
+
+```
+wget https://artifacts.elastic.co/downloads/logstash/logstash-7.17.5-linux-x86_64.tar.gz
+tar -zvxf logstash-7.17.5-linux-x86_64.tar.gz
+```
+
+#### 配置 Logstash
+
+```
+cd logstash-7.17.5/ && cp config/logstash-sample.conf logstash.conf
+```
+
+```
+vi config/logstash.conf
+
+input {
+  beats {
+    port => 5044
+  }
+  file {
+    path => "/var/log/*.log"
+    start_position => "beginning"
+  }
+}
+```
+
+#### 修改用户组
+
+```
+chown -R es:es /opt/logstash-7.17.5/
+```
+
+#### 启动 Logstash
+
+##### 切换用户
+
+```
+su es
+```
+
+##### 启动Logstash
+
+```
+#前台运行
+./bin/logstash -f ./config/logstash.conf 
+
+#后台运行
+nohup ./bin/logstash -f ./config/logstash.conf &
+```
+
