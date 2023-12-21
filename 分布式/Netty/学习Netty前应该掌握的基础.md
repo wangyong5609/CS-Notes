@@ -122,12 +122,32 @@ public class NioTest {
 
 Buffer 的常用子类：
 
-![Buffer](学习Netty前应该掌握的基础.assets/Buffer.png)
+![image-20231221205106278](./%E5%AD%A6%E4%B9%A0Netty%E5%89%8D%E5%BA%94%E8%AF%A5%E6%8E%8C%E6%8F%A1%E7%9A%84%E5%9F%BA%E7%A1%80.assets/image-20231221205106278.png)
 
 涵盖了 Java 中除 boolean 之外的所有的基本数据类型。其中 ByteBuffer 支持类型化的数据存取，即可以往 ByteBuffer 中放 byte 类型数据、也可以放 char、int、long、double 等类型的数据，但读取的时候要做好类型匹配处理，否则会抛出 BufferUnderflowException
 
+### 通道（Channel）
 
+Channel （通道）： Channel 是一个通道，管道，网络数据通过 Channel 读取和写入， Channel 和流Stream 的不同之处在于 **Channel 是双向的，流只在一个方向上移动** (InputStream/OutputStream ）而 Channel 可以用于读写同时进行，即 **ChanneI 是全双工**的。
+
+它的常用子类有：
+
+- FileChannel：用于文件读写
+- DatagramChannel：用于 UDP 数据包收发
+- ServerSocketChannel：用于服务端 TCP 数据包收发
+- SocketChannel：用于客户端 TCP 数据包收发
+
+![image-20231221205037155](./%E5%AD%A6%E4%B9%A0Netty%E5%89%8D%E5%BA%94%E8%AF%A5%E6%8E%8C%E6%8F%A1%E7%9A%84%E5%9F%BA%E7%A1%80.assets/image-20231221205037155.png)
+
+
+
+### 选择器（Selector）
+
+选择器（Selector）是实现 IO 多路复用的关键，多个 Channel 注册到某个 Selector 上，当 Channel 上有事件发生时，它就会被 Selector 轮询出来，然后通过selectedKeys 可以获取就绪 Channel 的集合，进行后续的|/ 0 操作。也就是说只有当连接上真正有读写等事件发生时，线程才会去进行读写等操作，这就不必为每个连接都创建一个线程，一个线程可以应对多个连接。这就是 IO 多路复用的要义。
+
+![img](./%E5%AD%A6%E4%B9%A0Netty%E5%89%8D%E5%BA%94%E8%AF%A5%E6%8E%8C%E6%8F%A1%E7%9A%84%E5%9F%BA%E7%A1%80.assets/4px2alvio0.png)
 
 ## 文章参考
 
 [45 张图深度解析 Netty 架构与原理](https://cloud.tencent.com/developer/article/1754078)
+
