@@ -1,3 +1,5 @@
+> 本文主要摘自作者`kunge`的《45 张图深度解析 Netty 架构与原理》，加入了一些自己的理解，感谢`kunge`的分享。
+
 ## 同步、异步、阻塞、非阻塞
 
 网路 IO 中阻塞、非阻塞、异步、同步这几个术语的含义和关系：
@@ -146,6 +148,99 @@ Channel （通道）： Channel 是一个通道，管道，网络数据通过 Ch
 选择器（Selector）是实现 IO 多路复用的关键，多个 Channel 注册到某个 Selector 上，当 Channel 上有事件发生时，它就会被 Selector 轮询出来，然后通过selectedKeys 可以获取就绪 Channel 的集合，进行后续的|/ 0 操作。也就是说只有当连接上真正有读写等事件发生时，线程才会去进行读写等操作，这就不必为每个连接都创建一个线程，一个线程可以应对多个连接。这就是 IO 多路复用的要义。
 
 ![img](./%E5%AD%A6%E4%B9%A0Netty%E5%89%8D%E5%BA%94%E8%AF%A5%E6%8E%8C%E6%8F%A1%E7%9A%84%E5%9F%BA%E7%A1%80.assets/4px2alvio0.png)
+
+
+
+## Reactor 线程模式
+
+> 单 Reactor 单线程模式 =》单 Reactor 多线程模式 =》**主从 Reactor 多线程模式**
+>
+> 每种模式都是对前一种模式的**优化**
+
+### 什么是 Reactor 模式
+
+Reactor 模式（也叫做 Dispatcher 模式，分派模式） 是一种处理并发 I/O 事件的设计模式，主要用于处理大量的并发连接和请求，尤其适用于网络服务器的设计。
+
+Reactor 模式的核心思想是使用一个或多个独立线程（通常称为 reactor 或 dispatcher）来处理所有的 I/O 事件，比如连接请求、数据到达等。这些线程会阻塞地等待这些事件的发生，一旦有事件发生，它们就会将事件分发给相应的事件处理器（handler）进行处理。一个线程可以处理多个连接的业务。
+
+下图反应了 Reactor 模式的基本形态（图片来源于网络）：
+
+![img](学习Netty前应该掌握的基础.assets/2cfqtrrveh.jpeg)
+
+Reactor 模式有两个核心组成部分：
+
+- Reactor（图中的 ServiceHandler）：Reactor 在一个单独的线程中运行，负责监听和分发事件，分发给适当的处理线程来对 IO 事件做出反应。
+- Handlers（图中的 EventHandler）：处理线程执行处理方法来响应 I/O 事件，处理线程执行的是非阻塞操作。
+
+### 单 Reactor 单线程模式
+
+单 Reactor 单线程模式的基本形态如下（图片来源于网络）：
+
+![img](学习Netty前应该掌握的基础.assets/3nuezqa9vz.jpeg)
+
+这种模式的基本工作流程为：
+
+1. Reactor 通过 select 监听客户端请求事件，收到事件之后通过 dispatch 进行分发
+2. 如果事件是建立连接的请求事件，则由 Acceptor 通过 accept 处理连接请求，然后创建一个 Handler 对象处理连接建立后的后续业务处理。
+3. 如果事件不是建立连接的请求事件，则由 Reactor 对象分发给连接对应的 Handler 处理。
+4. Handler 会完成 read-->业务处理-->send 的完整处理流程
+
+#### 思考
+
+因为所有的事情都是在一个线程中完成，如何有个任务数据量很大，业务处理时间长，它一个任务导致后来的很多任务无法执行，最后后面连接的数据就丢失了。
+
+怎么优化呢？任务处理不过来了，那就多加几个线程处理嘛，这时就引入了 **单 Reactor 多线程模式**。
+
+### 单 Reactor 多线程模式
+
+单 Reactor 单线程模式的基本形态如下（图片来源于网络）：
+
+![img](学习Netty前应该掌握的基础.assets/v98tr3a6ry.jpeg)
+
+这种模式的基本工作流程为：
+
+1. Reactor 对象通过 select 监听客户端请求事件，收到事件后通过 dispatch 进行分发。
+2. 如果事件是建立连接的请求事件，则由 Acceptor 通过 accept 处理连接请求，然后创建一个 Handler 对象处理连接建立后的后续业务处理。
+3. 如果事件不是建立连接的请求事件，则由 Reactor 对象分发给连接对应的 Handler 处理。Handler 只负责响应事件，不做具体的业务处理，Handler 通过 read 读取到请求数据后，会分发给后面的 Worker 线程池来处理业务请求。
+4. Worker 线程池会分配独立线程来完成真正的业务处理，并将处理结果返回给 Handler。Handler 通过 send 向客户端发送响应数据。
+
+> 职责分明：Reactor 就**建立连接**，然后把连接扔给 Handler，Handler **读写数据**，读取完成后将数据扔给 Woker 线程池，Woker 线程池做**业务处理**
+
+这种模式的优点是可以充分的利用多核 cpu 的处理能力，缺点是多线程数据共享和控制比较复杂，Reactor 处理所有的事件的监听和响应，在单线程中运行，面对高并发场景还是容易出现性能瓶颈。
+
+#### 思考
+
+单 Reactor 多线程解决了业务处理不及时的问题，但是从图中可以发现 Reactor 主线程同时要做建立连接、读写数据两件事，在高并发场景下，它可能就忙不过来了。
+
+怎么优化呢？那就把建立连接和读写数据分开由不同的线程执行，分担一下压力，于是**主从 Reactor 多线程模式**就有了。 
+
+### 主从 Reactor 多线程模式
+
+主从 Reactor 多线程模式的基本形态如下（图片来源于网络）：
+
+![img](学习Netty前应该掌握的基础.assets/7mf0rtmuyh.jpeg)
+
+这种模式的基本工作流程为：
+
+1. Reactor 主线程 MainReactor 对象通过 select 监听客户端连接事件，收到事件后，通过 Acceptor 处理客户端连接事件。
+2. 当 Acceptor 处理完客户端连接事件之后（与客户端建立好 Socket 连接），MainReactor 将连接分配给 SubReactor。（即：MainReactor 只负责监听客户端连接请求，和客户端建立连接之后将连接交由 SubReactor 监听后面的 IO 事件。）
+3. SubReactor 将连接加入到自己的连接队列进行监听，并创建 Handler 对各种事件进行处理。
+4. 当连接上有新事件发生的时候，SubReactor 就会调用对应的 Handler 处理。
+5. Handler 通过 read 从连接上读取请求数据，将请求数据分发给 Worker 线程池进行业务处理。
+6. Worker 线程池会分配独立线程来完成真正的业务处理，并将处理结果返回给 Handler。Handler 通过 send 向客户端发送响应数据。
+7. 一个 MainReactor 可以对应多个 SubReactor，即一个 MainReactor 线程可以对应多个 SubReactor 线程。
+
+这种模式的优点是：
+
+- MainReactor 线程与 SubReactor 线程的数据交互简单职责明确，**MainReactor 线程只需要接收新连接，SubReactor 线程完成后续的业务处理**。
+- MainReactor 线程与 SubReactor 线程的数据交互简单， **MainReactor 线程只需要把新连接传给 SubReactor 线程**，SubReactor 线程无需返回数据。
+- 多个 SubReactor 线程能够应对更高的并发请求。
+
+这种模式的缺点是编程复杂度较高。但是由于其优点明显，在许多项目中被广泛使用，包括 Nginx、Memcached、Netty 等。
+
+这种模式也被叫做服务器的 **1+M+N 线程模式**，即使用该模式开发的服务器包含一个（或多个，1 只是表示相对较少）连接建立线程（`Reactor主线程`）+ M 个 IO 线程（`SubReactor`）+N 个业务处理线程（`Worker`）。这是业界成熟的服务器程序设计模式。
+
+
 
 ## 文章参考
 
