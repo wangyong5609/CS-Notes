@@ -71,3 +71,119 @@ Netty线程模型是基于Reactor模型实现的，对Reactor三种模式都有�
 > 对比主从Reactor-多线程模型就会发现，Boss EventLoopGroup 就是 mainReactor，Worker EventLoopGroup 就是 subReactor
 
 ![image-20231223144027155](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231223144027155.png)
+
+## Pipeline 和 Handler
+
+`ChannelPipeline` 提供了 `ChannelHandler` **链的容器**。以服务端程序为例，客户端发送过来的数据要接收，读取处理，我们称数据是入站的，需要经过一系列Handler处理后；如果服务器想向客户端写回数据，也需要经过一系列Handler处理，我们称数据是出站的
+
+![image-20231223203543326](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231223203543326.png)
+
+### ChannelHandler 分类
+
+对于数据的出站和入站，有着不同的ChannelHandler类型与之对应：
+
+- `ChannelInboundHandler` 入站事件处理器
+- `ChannelOutBoundHandler` 出站事件处理器
+- `ChannelHandlerAdapter` 提供了一些方法的默认实现，可减少用户对于ChannelHandler的编写
+- `ChannelDuplexHandler` 混合型，既能处理入站事件又能处理出站事件
+
+![image-20231223204219699](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231223204219699.png)
+
+> inbound入站事件处理顺序（方向）是由链表的头到链表尾，outbound事件的处理顺序是由链表尾到链表头。
+>
+> inbound入站事件由netty内部触发，最终由netty外部的代码消费。数据是netty读完成后交给业务代码使用，所以说是由外部代码消费
+>
+> outbound事件由netty外部的代码触发，最终由netty内部消费。什么时候写数据是由业务代码出发的，然后netty帮你处理好发给客户端
+
+![image-20231223204351129](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231223204351129.png)
+
+
+
+## Netty如何使用Reactor模式
+
+前面说了 netty 是基于Reactor模型实现的，那具体是怎么用的呢？
+
+![image-20231224212016498](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231224212016498.png)
+
+NioEventLoopEvent 可以理解为一个线程池，传参数为 1 就是只创建一个线程，这就是**Reactor单线程模式**
+
+NioEventLoopEvent 构造函数不传参数的话默认会创建当前主机逻辑内核数量的 2 倍数量的 NioEventLoop。
+
+![image-20231224212612971](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231224212612971.png)
+
+![image-20231224212708548](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231224212708548.png)
+
+ServerBootstrap 是一个核心引导启动类，我们来看它的构造函数
+
+![image-20231224213425469](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20231224213425469.png)
+
+所以可以使用两个group构建父子关系，父NioEventLoopEvent 使用单线程多线程都可以，子NioEventLoopEvent 使用多线程，这就是主从 Reactor 多线程模式
+
+## Hello world
+
+下面我们来写一个简易的CS示例
+
+### Netty Server
+
+maven依赖
+
+```java
+<dependency>
+    <groupId>io.netty</groupId>
+    <artifactId>netty-all</artifactId>
+    <version>4.1.42.Final</version>
+</dependency>
+```
+
+```java
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+
+public class NettyServer {
+    public static void main(String[] args) {
+        NettyServer nettyServer = new NettyServer();
+        // 指定服务端端口
+        nettyServer.start(8088);
+    }
+
+    public void start(int port) {
+        // 使用Reactor主从多线程模式，准备 Boos 和 worker
+        NioEventLoopGroup boos = new NioEventLoopGroup(1);
+        NioEventLoopGroup worker = new NioEventLoopGroup();
+        // 核心引导类
+        ServerBootstrap serverBootstrap = new ServerBootstrap();
+        serverBootstrap
+                // 设置父子线程组
+                .group(boos, worker)
+                // 说明服务端通道的实现类（便于netty做反射处理）
+                .channel(NioServerSocketChannel.class)
+                // handler()方法用于给 BossGroup 设置业务处理器
+                // childHandler()方法用于给 WorkerGroup 设置业务处理器
+                .handler(new LoggingHandler(LogLevel.INFO))
+                // 创建一个通道初始化对象
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) throws Exception {
+                        // 这里方法是有客户端新的连接过来,Channel初始化时才会回调
+                        ChannelPipeline pipeline = ch.pipeline();
+                    }
+                });
+         // 绑定端口启动
+        try {
+            ChannelFuture future = serverBootstrap.bind(port).sync();
+            // 监听端口的关闭
+            future.channel().closeFuture().sync();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+```
+
