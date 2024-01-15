@@ -1,0 +1,54 @@
+# 来看看我的Java收藏夹
+
+作为一名Java程序员，持续学习是保持竞争力的关键，下面是我平时学习常用的网站，分享给大家。
+
+
+
+## B站
+
+[B站](https://www.bilibili.com/) 对我来说可以说是使用频率最高的网站了，通过视频的形式学习了很多新的技术，在B站我关注了这些宝藏UP主。
+
+
+
+[黑马程序员](https://space.bilibili.com/37974444?spm_id_from=333.337.0.0)：黑马的课质量都挺高的，尤其是课件我认为要比尚硅谷的精美和完善一些，我在黑马也刷了一些课，如 [Java大厂面试题](https://www.bilibili.com/video/BV1yT411H7YK/?spm_id_from=333.999.0.0)，[黑马头条](https://www.bilibili.com/video/BV1Qs4y1v7x4/?spm_id_from=333.999.0.0), [Redis](https://www.bilibili.com/video/BV1cr4y1671t/?spm_id_from=333.999.0.0)。感兴趣的还可以看看[2022年度黑马好课](https://www.bilibili.com/video/BV1744y1o7c3/?spm_id_from=333.999.0.0)。
+
+
+
+[尚硅谷](https://space.bilibili.com/302417610?spm_id_from=333.337.0.0)：我是看了宋红康老师的[JVM课程](https://www.bilibili.com/video/BV1PJ411n7xZ/?spm_id_from=333.999.0.0)入坑的，只记得当时觉得他讲课通俗易懂，后面还在尚硅谷学了微服务相关的课程。23年尚硅谷更新了较多的大数据课程，感兴趣的可以学习。
+
+
+
+[程序员鱼皮](https://space.bilibili.com/12890453)：鱼皮是个技术博主，技术干货还是挺多的，讲解方式也比较有趣，视频时长多数为10分钟以内，适合在摸鱼或者地铁上看。
+
+
+
+[极海Channel](https://space.bilibili.com/1525355)：海哥的视频以工作和面试干货的分享为主，时长较短，23年更新频率很高，摸鱼时可看。
+
+
+
+## 技术文章摘抄
+
+[技术文章摘抄](https://lianglianglee.com/) 收录了大量的专栏markdown，我视作珍宝。专栏涵盖了Java，Python，GO，分布式，容器技术，架构等诸多分类，最贴心是它不仅仅是讲技术，还传授恋爱知识，[恋爱必修课](https://lianglianglee.com/%e6%81%8b%e7%88%b1%e5%bf%85%e4%bf%ae%e8%af%be)解决程序员的单身烦恼。
+
+
+
+23年我看完了[重学操作系统](https://lianglianglee.com/%E4%B8%93%E6%A0%8F/%E9%87%8D%E5%AD%A6%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F-%E5%AE%8C)，[Redis核心技术与实战](https://lianglianglee.com/%E4%B8%93%E6%A0%8F/Redis%20%E6%A0%B8%E5%BF%83%E6%8A%80%E6%9C%AF%E4%B8%8E%E5%AE%9E%E6%88%98)，[MySQL实战45讲](https://lianglianglee.com/%E4%B8%93%E6%A0%8F/MySQL%E5%AE%9E%E6%88%9845%E8%AE%B2)。
+
+
+
+> 心得：偏理论的知识一定要理解它，可以结合AI工具进行刨根问底式的追问，记笔记，写下当时的感悟所得；偏实践的知识一定要敲代码，眼睛会了不代表手会了
+
+
+
+## 小林coding
+
+我常在 [小林coding](https://xiaolincoding.com/) 通过图解的形式学习计算机基础，网站有《图解网络》、《图解系统》、《图解Redis》、《图解MySQL》可供学习。因为我不是计算机专业的，这方面比较薄弱，小林哥的图解系列帮了我大
+
+
+
+忙，我真的佩服小林哥的图形思维能力，很多冗杂的知识点通过图形的转化，一下就变的易于理解和记忆。
+
+
+
+> 心得：图解系列是小林哥网络文章的整合，没有教科书那么全面，不理解的地方可查阅资料或者结合AI工具学习
+
