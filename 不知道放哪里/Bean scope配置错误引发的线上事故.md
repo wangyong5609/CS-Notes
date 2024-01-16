@@ -142,11 +142,11 @@ Spring Bean 默认是 singleton，而 Struts1 中 Form 的 scope 默认是 sessi
 
 ## 修复方案
 
-PaymentForm Bean 添加 scope 为 session。
+PaymentForm Bean 添加 scope 为 prototype。
 
 ```xml
 <beans>
-	<bean id="paymentForm" class="com.test.web.forms.PaymentForm" scope="session" />
+	<bean id="paymentForm" class="com.test.web.forms.PaymentForm" scope="prototype" />
 </beans>
 ```
 
