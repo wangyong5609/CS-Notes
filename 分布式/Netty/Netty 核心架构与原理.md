@@ -134,8 +134,6 @@ ServerBootstrap 是一个核心引导启动类，我们来看它的构造函数
 ### Netty Server
 
 ```java
-package com.itheima.netty.mydemo;
-
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
@@ -176,11 +174,20 @@ public class NettyServer {
                         protected void initChannel(SocketChannel ch) throws Exception {
                             // 这里方法是有客户端新的连接过来,Channel初始化时才会回调
                             ChannelPipeline pipeline = ch.pipeline();
+                        
+                            // 将OutBoundHandler放在后面
+//                            pipeline.addLast(new NettyServerInBoundHandler());
+//                            pipeline.addLast(new NettyServerOutBoundHandler1());
+//                            pipeline.addLast(new NettyServerOutBoundHandler2());
+                            
+                            // 将OutBoundHandler放在前面
+                            pipeline.addFirst(new NettyServerOutBoundHandler1());
+                            pipeline.addFirst(new NettyServerOutBoundHandler2());
                             pipeline.addLast(new NettyServerInBoundHandler());
+                        
                         }
                     });
             // 绑定端口启动
-
             ChannelFuture future = serverBootstrap.bind(port).sync();
             // 监听端口的关闭
             future.channel().closeFuture().sync();
@@ -196,7 +203,7 @@ public class NettyServer {
     /**
      * 自定义一个 Handler，需要继承 Netty 规定好的某个 HandlerAdapter（规范）
      * InboundHandler 用于处理数据流入本端（服务端）的 IO 事件
-     * InboundHandler 用于处理数据流出本端（服务端）的 IO 事件
+     * OutboundHandler 用于处理数据流出本端（服务端）的 IO 事件
      */
     static class NettyServerInBoundHandler extends ChannelInboundHandlerAdapter {
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
@@ -245,7 +252,10 @@ public class NettyServer {
             ByteBuf buffer = ctx.alloc().buffer();
             buffer.writeBytes("Hello, Netty Client".getBytes(StandardCharsets.UTF_8));
             channel.writeAndFlush(buffer);
+            // 如果使用context写回数据，事件会从当前handler流向头部，如果这个handler后面还有outboundHandler，那么outboundHandler不会执行
+//            ctx.writeAndFlush(buffer);
             super.channelReadComplete(ctx);
+            
         }
 
         @Override
@@ -254,14 +264,30 @@ public class NettyServer {
             super.exceptionCaught(ctx, cause);
         }
     }
+
+    static class NettyServerOutBoundHandler1 extends ChannelOutboundHandlerAdapter {
+
+        @Override
+        public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+            System.out.println("ServerOutboundHandler1 " + ((ByteBuf) msg).toString(StandardCharsets.UTF_8));
+            super.write(ctx, msg, promise);
+        }
+    }
+
+    static class NettyServerOutBoundHandler2 extends ChannelOutboundHandlerAdapter {
+
+        @Override
+        public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+            System.out.println("ServerOutboundHandler2 " + ((ByteBuf) msg).toString(StandardCharsets.UTF_8));
+            super.write(ctx, msg, promise);
+        }
+    }
 }
 ```
 
 ### Netty Client
 
 ```java
-package com.itheima.netty.mydemo;
-
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -367,3 +393,36 @@ public class NettyClient {
 }
 ```
 
+### inbound/outbound 加载顺序和执行顺序
+
+![image-20240127205550863](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20240127205550863.png)
+
+> addLast：新添加的在最后
+>
+> addFirst: 新添加的在最前
+>
+> InboundHandler：从左往右执行，顺序执行
+>
+> OutboundHandler：从右往左执行，逆序执行
+
+### 回写数据时会经过哪些outboundHandler?
+
+![image-20240127212415540](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20240127212415540.png)
+
+所以当通过ChannelHandlerContext对象进行数据回写时，右侧的handler不会被执行
+
+### 如何让outboundHandler 一定能执行到？  
+
+> 把OutboundHandler排在前面
+
+![image-20240127212721498](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20240127212721498.png)
+
+### 出站事件传播和outboundHandler中的数据修改  
+
+![image-20240127213759524](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20240127213759524.png)
+
+> 上面提到`如果是通过Channel对象进行数据回写，事件会从pipeline尾部流向头部 `,所以这里会造成递归问题，导致堆栈溢出
+
+
+
+## Netty核心组件剖析
