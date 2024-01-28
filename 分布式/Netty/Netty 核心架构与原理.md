@@ -426,3 +426,59 @@ public class NettyClient {
 
 
 ## Netty核心组件剖析
+
+### Bootstrap
+
+Bootstrap是引导的意思，它的作用是配置整个Netty程序，将各个组件都串起来，最后绑定端口、启动Netty服务
+
+
+
+Netty中提供了2种类型的引导类，一种用于客户端(Bootstrap)，而另一种(ServerBootstrap)用于服务器，区别在于：
+
+
+
+1、ServerBootstrap 将绑定到一个端口，因为服务器必须要监听连接，而 Bootstrap 则是由想要连接到远程节点的客户端应用程序所使用的
+
+
+
+2、引导一个客户端只需要一个EventLoopGroup，但是一个ServerBootstrap则需要两个
+
+### Channel
+
+Netty中的Channel是与网络套接字相关的，可以理解为是socket连接，在客户端与服务端连接的时候就会建立一个Channel，它负责基本的IO操作，比如：bind()、connect()，read()，write() 等
+
+
+
+主要作用：
+
+
+
+1. 通过Channel可获得当前网络连接的通道状态。
+
+
+
+2. 通过Channel可获得网络连接的配置参数（缓冲区大小等）。
+
+
+
+3. Channel提供异步的网络I/O操作，比如连接的建立、数据的读写、端口的绑定等。
+
+
+
+不同协议、不同的I/O类型的连接都有不同的 Channel 类型与之对应
+
+![image-20240128100346483](./Netty%20%E6%A0%B8%E5%BF%83%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%8E%9F%E7%90%86.assets/image-20240128100346483.png)
+
+### EventLoopGroup 和 EventLoop  
+
+Netty是基于事件驱动的，比如：连接注册，连接激活；数据读取；异常事件等等，有了事件，就**需要一个组件去监控事件的产生和事件的协调处理**，这个组件就是EventLoop（事件循环/EventExecutor）
+
+
+
+在Netty 中每个Channel 都会被分配到一个 EventLoop。一个 EventLoop 可以服务于多个 Channel。每个EventLoop 会占用一个 Thread，同时这个 Thread 会处理 EventLoop 上面发生的所有 IO 操作和事件。
+
+
+
+EventLoopGroup 是用来生成 EventLoop 的，包含了一组EventLoop（可以初步理解成Netty线程池）
+
+### ByteBuf
