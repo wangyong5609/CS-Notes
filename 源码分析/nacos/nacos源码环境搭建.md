@@ -7,7 +7,7 @@
 获取源码有两种方式：
 
 1. **Fork Nacos仓库**，这样就可以在源码上做任何修改和注释，不影响原始仓库，甚至可以贡献自己的代码给开源社区（推荐）
-2. 从 [releases](https://github.com/alibaba/nacos/releases)页面找到你想下载的版本，下载source code文件
+2. 从 [releases](https://github.com/alibaba/nacos/releases) 页面找到你想下载的版本，下载source code文件
 
 我是通过 Fork 的方式拉取源码，阅读的版本是 `2.4.3`，拉取完成以后，默认是develop版本， 基于`2.4.3`新建一个分支：
 
@@ -84,7 +84,7 @@ Nacos 默认使用内置 Derby 数据库存储。
 
 ### 端口占用
 
-Nacos在启动时默认会占用四个端口，这些端口及其用途如下：
+Nacos 在启动时默认会占用四个端口，这些端口及其用途如下：
 
 1. **8848**：这是Nacos服务的主端口，用于客户端、控制台以及OpenAPI的HTTP通信。
 2. **9848**：客户端gRPC请求服务端的端口，客户端通过此端口向Nacos服务端发起连接和请求。
@@ -137,3 +137,21 @@ Nacos在启动时默认会占用四个端口，这些端口及其用途如下：
 配置完成后，启动集群
 
 ![image-20241105131202624](./nacos源码环境搭建.assets/image-20241105131202624.png)
+
+在集群管理查看节点状态
+
+![image-20241105134433683](./nacos源码环境搭建.assets/image-20241105134433683.png)
+
+
+
+## 客户端（可选）
+
+nacos 服务端启动完成，后面学习服务注册，健康监测，配置管理还需要可注册的服务实例。
+
+我是用的 [nacos-examples](https://github.com/nacos-group/nacos-examples) 提供的示例代码，启动了一个消费者和服务提供者，向nacos注册服务。
+
+![image-20241106131202652](./nacos源码环境搭建.assets/image-20241106131202652.png)
+
+如果只想学习 nacos 服务端的源码，那么使用 nacos 源码下 `example` 模块的示例和 `naming`, `test` 模块下的测试代码做debug足矣
+
+![image-20241106132103600](./nacos源码环境搭建.assets/image-20241106132103600.png)
