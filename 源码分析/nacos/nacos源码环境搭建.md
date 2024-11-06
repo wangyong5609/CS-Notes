@@ -148,9 +148,9 @@ Nacos 在启动时默认会占用四个端口，这些端口及其用途如下�
 
 nacos 服务端启动完成，后面学习服务注册，健康监测，配置管理还需要可注册的服务实例。
 
-我是用的 [nacos-examples](https://github.com/nacos-group/nacos-examples) 提供的示例代码，启动了一个消费者和服务提供者，向nacos注册服务。
+我的[示例代码仓库](https://github.com/wangyong5609/nacos-demo)，启动一个消费者和服务提供者，向nacos注册服务。
 
-![image-20241106131202652](./nacos源码环境搭建.assets/image-20241106131202652.png)
+
 
 如果只想学习 nacos 服务端的源码，那么使用 nacos 源码下 `example` 模块的示例和 `naming`, `test` 模块下的测试代码做debug足矣
 
