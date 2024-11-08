@@ -20,15 +20,25 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 ## 二、服务注册原理
 
+客户端请求原理图：
 
+> Processon 地址：https://www.processon.com/diagraming/672d9c0ca8011b320f4a064c
+
+![image-20241108135709194](./nacos源码分析-服务注册.assets/image-20241108135709194.png)
+
+简单来说就是，项目引入 `spring-cloud-starter-alibaba-nacos-discovery` 以后，利用Spring的自动装配，在它的`spring.facotries`中加载了 `NacosServiceRegistryAutoConfiguration`, `NacosServiceRegistryAutoConfiguration` 中加载了一个叫 `NacosAutoServiceRegistration` 的Bean，
+
+这个Bean的父类实现了 `ApplicationListener` 这个接口，并监听了`WebServerInitializedEvent`类型的事件，在Tomcat启动后会发布`WebServerInitializedEvent`的事件，事件被监听到以后，就会调用 `NacosServiceRegistry`的 `register` 方法向Nacos服务端注册实例。
 
 ## 三、源码分析
+
+### 客户端
 
 当我们服务引入`spring-cloud-starter-alibaba-nacos-discovery`,便可以实现自动进行注册，这是因为在`spring.facotries`中自动装配了`NacosServiceRegistryAutoConfiguration`
 
 ![image-20241107130511850](./nacos源码分析-服务注册.assets/image-20241107130511850.png)
 
-### 1. NacosServiceRegistryAutoConfiguration加载Bean
+#### 1. NacosServiceRegistryAutoConfiguration加载Bean
 
 ![image-20241107135455045](./nacos源码分析-服务注册.assets/image-20241107135455045.png)
 
@@ -36,13 +46,13 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 仔细看会发现，前面两个Bean 都是 `NacosAutoServiceRegistration` 的入参
 
-#### 1.1 NacosServiceRegistry
+##### 1.1 NacosServiceRegistry
 
 `NacosServiceRegistry` 的构造函数入参主要是一些注册需要的配置信息，下面的`register` 方法就是实现服务注册的，不过要想在服务启动时自动完成注册，还得靠 `NacosAutoServiceRegistration`
 
 ![image-20241107144358116](./nacos源码分析-服务注册.assets/image-20241107144358116.png)
 
-#### 1.2 NacosRegistration
+##### 1.2 NacosRegistration
 
 - `registrationCustomizers`：一个 `NacosRegistrationCustomizer` 类型的列表，可能用于自定义注册过程。
 - `nacosDiscoveryProperties`：包含 Nacos 服务发现的相关配置。
@@ -50,7 +60,7 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 ![image-20241107151522271](./nacos源码分析-服务注册.assets/image-20241107151522271.png)
 
-#### 1.3 NacosAutoServiceRegistration
+##### 1.3 NacosAutoServiceRegistration
 
 ![image-20241107155551813](./nacos源码分析-服务注册.assets/image-20241107155551813.png)
 
@@ -60,7 +70,7 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 ![image-20241107165110867](./nacos源码分析-服务注册.assets/image-20241107165110867.png)
 
-### 2. 监听WEB容器事件
+#### 2. 监听WEB容器事件
 
 `ApplicationListener` 是 Spring 框架中一个接口，它属于 `org.springframework.context` 包。这个接口允许 beans 监听 Spring 事件发布系统发布的事件。
 
@@ -82,13 +92,13 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 ![image-20241107171719648](./nacos源码分析-服务注册.assets/image-20241107171719648.png)
 
+
+
+#### 3. 处理容器事件
+
 所以当容器初始化完成后，会调用 `org.springframework.cloud.client.serviceregistry.AbstractAutoServiceRegistration#onApplicationEvent`
 
 ![image-20241107174118933](./nacos源码分析-服务注册.assets/image-20241107174118933.png)
-
-
-
-### 3. 处理容器事件
 
 ```java
 // org.springframework.cloud.client.serviceregistry.AbstractAutoServiceRegistration#start
@@ -119,11 +129,13 @@ public void start() {
 }
 ```
 
-### 4. NacosServiceRegistry 注册服务
+#### 4. NacosServiceRegistry 注册服务
 
 ![image-20241107175345519](./nacos源码分析-服务注册.assets/image-20241107175345519.png)
 
 这里 `serviceRegistry` 就是 `NacosServiceRegistryAutoConfiguration` 中加载的 `NacosServiceRegistry` Bean
+
+下面核心代码是 `registerInstance`
 
 ```java
 // com.alibaba.cloud.nacos.registry.NacosServiceRegistry#register
@@ -157,9 +169,26 @@ public void register(Registration registration) {
 }
 ```
 
+ `registerInstance` 方法作用：
 
+- 检查集群名称和心跳配置是否合法
+- 调用 `NamingClientProxyDelegate#registerService` 注册服务
 
+![image-20241108115204178](./nacos源码分析-服务注册.assets/image-20241108115204178.png)
 
+![image-20241108115702451](./nacos源码分析-服务注册.assets/image-20241108115702451.png)
+
+![image-20241108115924913](./nacos源码分析-服务注册.assets/image-20241108115924913.png)
+
+`getExecuteClientProxy` 方法，如果是临时示例使用grpc代理，永久示例则用http代理。
+
+##### 4.1 临时实例
+
+临时实例使用 `grpcClientProxy` 注册
+
+![image-20241108120739949](./nacos源码分析-服务注册.assets/image-20241108120739949.png)
+
+`cacheInstanceForRedo`
 
 ```java
 // 用于缓存需要重做的实例信息。
@@ -175,28 +204,76 @@ public void cacheInstanceForRedo(String serviceName, String groupName, Instance 
 }
 ```
 
+将实例信息封装到 `InstanceRequest` ，`requestToServer` 方法就是请求服务端接口注册实例了
 
+![image-20241108121654641](./nacos源码分析-服务注册.assets/image-20241108121654641.png)
+
+##### 4.2 永久实例
+
+永久使用调用 `NamingHttpClientProxy#registerService`注册
+
+![image-20241108122242165](./nacos源码分析-服务注册.assets/image-20241108122242165.png)
+
+> 感谢你看到了这里，我的朋友。
+>
+> 写累了，刷会儿抖音，哈哈哈哈
+
+
+
+### 服务端
+
+#### 1. 注册请求处理器
+
+在服务端有个类 `RequestHandlerRegistry`, 这个类实现了 `ApplicationListener`  接口，并且指定了它监听的事件类型为 `ContextRefreshedEvent`。
+`ApplicationListener` 是Spring框架中的一个接口，用于定义一个事件监听器，它可以监听Spring应用上下文中发生的事件。
+`ContextRefreshedEvent` 是 Spring 框架中的一个事件，表示Spring应用上下文已经初始化完成并且已经刷新，即所有的Bean都已经创建和配置完成
+
+![image-20241108174909000](./nacos源码分析-服务注册.assets/image-20241108174909000.png)
+
+然后看下事件回调方法做了什么
 
 ```java
-public void registerInstance(Service service, Instance instance, String clientId) throws NacosException {
-    // 检查参数是否合理，实例不能为空，心跳超时时间必须大于间隔时间，集群名字合法
-    NamingUtils.checkInstanceIsLegal(instance);
+// RequestHandlerRegistry#onApplicationEvent
+public void onApplicationEvent(ContextRefreshedEvent event) {
+    // 获取RequestHandler的所有实现类
+    Map<String, RequestHandler> beansOfType = event.getApplicationContext().getBeansOfType(RequestHandler.class);
+    Collection<RequestHandler> values = beansOfType.values();
+    for (RequestHandler requestHandler : values) {
+      	// ...省略部分代码
+        //register tps control.
+        try {
+            Method method = clazz.getMethod("handle", Request.class, RequestMeta.class);
+            // handle方法上有TpsControl注解，且开启了tps控制
+            if (method.isAnnotationPresent(TpsControl.class) && TpsControlConfig.isTpsControlEnabled()) {
+                TpsControl tpsControl = method.getAnnotation(TpsControl.class);
+                String pointName = tpsControl.pointName();
+                ControlManagerCenter.getInstance().getTpsControlManager().registerTpsPoint(pointName);
+            }
+        } catch (Exception e) {
+            //ignore.
+        }
 
-    Service singleton = ServiceManager.getInstance().getSingleton(service);
-    if (!singleton.isEphemeral()) {
-        throw new NacosRuntimeException(NacosException.INVALID_PARAM,
-                String.format("Current service %s is persistent service, can't register ephemeral instance.",
-                        singleton.getGroupedServiceName()));
+        Class tClass = (Class) ((ParameterizedType) clazz.getGenericSuperclass()).getActualTypeArguments()[0];
+
+        //register invoke source.
+        try {
+            if (clazz.isAnnotationPresent(InvokeSource.class)) {
+                InvokeSource tpsControl = clazz.getAnnotation(InvokeSource.class);
+                // 类的调用来源
+                String[] sources = tpsControl.source();
+                if (sources != null && sources.length > 0) {
+                    sourceRegistry.put(tClass.getSimpleName(), Sets.newHashSet(sources));
+                }
+            }
+        } catch (Exception e) {
+            //ignore.
+        }
+				// 将处理器放到 registryHandlers
+        registryHandlers.putIfAbsent(tClass.getSimpleName(), requestHandler);
     }
-    Client client = clientManager.getClient(clientId);
-    checkClientIsLegal(client, clientId);
-    InstancePublishInfo instanceInfo = getPublishInfo(instance);
-    client.addServiceInstance(singleton, instanceInfo);
-    client.setLastUpdatedTime();
-    client.recalculateRevision();
-    NotifyCenter.publishEvent(new ClientOperationEvent.ClientRegisterServiceEvent(singleton, clientId));
-    NotifyCenter
-            .publishEvent(new MetadataEvent.InstanceMetadataEvent(singleton, instanceInfo.getMetadataId(), false));
 }
 ```
 
+注册所有 `RequestHandler` 的实现类，这里面就包括处理注册实例请求的处理器：`InstanceRequestHandler`
+
+#### 2. 实例请求处理器
