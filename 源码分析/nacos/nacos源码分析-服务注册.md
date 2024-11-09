@@ -12,11 +12,16 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 ![image.png](./nacos源码分析-服务注册.assets/1637460801625-abaec6c8-82a8-46cf-9b86-7b7ecc2968e4.png)
 
-### 架构图
+> 目前主要关注 Nacos 服务注册与发现相关的内容
 
-整体架构分为用户层、业务层、内核层和插件，用户层主要解决用户使用的易用性问题，业务层主要解决服务发现和配置管理的功能问题，内核层解决分布式系统一致性、存储、高可用等核心问题，插件解决扩展性问题。
+- 服务提供者在启动时会向Nacos注册中心发送注册请求，包括服务名称、IP地址、端口号等信息。
+- Nacos服务端接收到注册请求后，将服务实例信息存储在注册中心的数据库中，并缓存到内存中以便快速查询。
+- 注册成功后，服务提供者会定期向Nacos发送心跳请求，以表明服务实例仍在运行中。
+- 服务消费者从服务注册中心发现并调用服务。
 
-![img](./nacos源码分析-服务注册.assets/1543984258587-3a2cc018-728f-414e-8186-216b896122c9.png)
+![img](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/1598000046685-864bbfe0-ae90-4e24-85b1-bd352ee24314.png)
+
+
 
 ## 二、服务注册原理
 
@@ -182,6 +187,8 @@ public void register(Registration registration) {
 
 `getExecuteClientProxy` 方法，如果是临时示例使用grpc代理，永久示例则用http代理。
 
+临时实例和永久实例的使用场景可以拿双十一举例，在双十一期间，为了应对流量高峰，需要增加更多的实例，它们就是临时实例，双十一过后，这些实例会被注销，剩下的维持服务平稳运行的实例就是永久实例
+
 ##### 4.1 临时实例
 
 临时实例使用 `grpcClientProxy` 注册
@@ -222,9 +229,11 @@ public void cacheInstanceForRedo(String serviceName, String groupName, Instance 
 
 ### 服务端
 
-#### 1. 注册请求处理器
+#### 注册临时实例
 
-在服务端有个类 `RequestHandlerRegistry`, 这个类实现了 `ApplicationListener`  接口，并且指定了它监听的事件类型为 `ContextRefreshedEvent`。
+##### 1.注册请求处理器
+
+在服务端有个类 `RequestHandlerRegistry`, 这个类实现了 `ApplicationListener`接口，并且指定了它监听的事件类型为 `ContextRefreshedEvent`。
 `ApplicationListener` 是Spring框架中的一个接口，用于定义一个事件监听器，它可以监听Spring应用上下文中发生的事件。
 `ContextRefreshedEvent` 是 Spring 框架中的一个事件，表示Spring应用上下文已经初始化完成并且已经刷新，即所有的Bean都已经创建和配置完成
 
@@ -240,35 +249,10 @@ public void onApplicationEvent(ContextRefreshedEvent event) {
     Collection<RequestHandler> values = beansOfType.values();
     for (RequestHandler requestHandler : values) {
       	// ...省略部分代码
-        //register tps control.
-        try {
-            Method method = clazz.getMethod("handle", Request.class, RequestMeta.class);
-            // handle方法上有TpsControl注解，且开启了tps控制
-            if (method.isAnnotationPresent(TpsControl.class) && TpsControlConfig.isTpsControlEnabled()) {
-                TpsControl tpsControl = method.getAnnotation(TpsControl.class);
-                String pointName = tpsControl.pointName();
-                ControlManagerCenter.getInstance().getTpsControlManager().registerTpsPoint(pointName);
-            }
-        } catch (Exception e) {
-            //ignore.
-        }
-
+        Class<?> clazz = requestHandler.getClass();
         Class tClass = (Class) ((ParameterizedType) clazz.getGenericSuperclass()).getActualTypeArguments()[0];
-
-        //register invoke source.
-        try {
-            if (clazz.isAnnotationPresent(InvokeSource.class)) {
-                InvokeSource tpsControl = clazz.getAnnotation(InvokeSource.class);
-                // 类的调用来源
-                String[] sources = tpsControl.source();
-                if (sources != null && sources.length > 0) {
-                    sourceRegistry.put(tClass.getSimpleName(), Sets.newHashSet(sources));
-                }
-            }
-        } catch (Exception e) {
-            //ignore.
-        }
-				// 将处理器放到 registryHandlers
+      	// ...省略部分代码
+		// 将处理器放到 registryHandlers
         registryHandlers.putIfAbsent(tClass.getSimpleName(), requestHandler);
     }
 }
@@ -276,4 +260,66 @@ public void onApplicationEvent(ContextRefreshedEvent event) {
 
 注册所有 `RequestHandler` 的实现类，这里面就包括处理注册实例请求的处理器：`InstanceRequestHandler`
 
-#### 2. 实例请求处理器
+##### 2.请求接收器
+
+上面提到过，临时实例使用 `grpcClientProxy` 注册，rpc请求将由`GrpcRequestAcceptor`接收并处理
+
+![image-20241109130421143](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109130421143.png)
+
+可以看到注入了 `RequestHandlerRegistry`, 在下面的 `request`方法中从`RequestHandlerRegistry`取出对应请求类型的hanlder，然后调用`handle`方法。 
+
+```java
+@Override
+public void request(Payload grpcRequest, StreamObserver<Payload> responseObserver) {
+    // 请求类型，比如"InstanceRequest"
+    String type = grpcRequest.getMetadata().getType();
+    //.. 省略代码
+    RequestHandler requestHandler = requestHandlerRegistry.getByRequestType(type);
+    //.. 省略代码
+    Response response = requestHandler.handleRequest(request, requestMeta);
+    //.. 省略代码
+}
+```
+
+##### 3.实例请求处理器InstanceRequestHandler
+
+`InstanceRequestHandler`有两个作用：
+
+- 注册临时实例
+- 注销临时实例
+
+`handle`方法中如果请求类型是 `registerInstance`,则调用 `registerInstance`方法。
+
+![image-20241109134908184](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109134908184.png)
+
+从上面图中可以看到，通过构造函数注入了 `EphemeralClientOperationServiceImpl`，然后调用它的`registerInstance`方法继续注册实例
+
+![image-20241109140027793](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109140027793.png)
+
+在`registerInstance`方法中发布了客户端注册事件`ClientOperationEvent.ClientRegisterServiceEvent`,监听该事件的Listener将会处理该事件完成服务注册
+
+![image-20241109201321583](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109201321583.png)
+
+##### 4.处理客户端注册事件
+
+`ClientRegisterServiceEvent`类图
+
+![image-20241109210412217](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109210412217.png)
+
+`ClientRegisterServiceEvent`被`ClientServiceIndexesManager`订阅
+
+<img src="./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109210850719.png" alt="image-20241109210850719" style="zoom:150%;" />
+
+如果是事件类型是客户端注册服务事件，调用`addPublisherIndexes`
+
+``addPublisherIndexes` 方法的作用是将新的服务实例（由 `clientId` 标识）注册到服务（`service`）的发布者列表中，并发布`ServiceChangedEvent`事件，通知所有监听器服务数据已经发生了变化
+
+![image-20241109211751434](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109211751434.png)
+
+`NamingSubscriberServiceV2Impl`类订阅了`ServiceChangedEvent`
+
+当 `ServiceChangedEvent` 事件发生时，`NamingSubscriberServiceV2Impl` 会将服务变更信息封装成 `PushDelayTask`，然后添加到延迟任务执行引擎 `PushDelayTaskExecuteEngine` 中，以便稍后推送给所有订阅了该服务的客户端
+
+`PushDelayTask` 在 Nacos 中是一个用于处理服务推送延迟任务的类。它主要负责在服务注册或变更时，将最新的服务实例列表推送给所有订阅了该服务的客户端
+
+![image-20241109213109934](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109213109934.png)
