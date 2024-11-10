@@ -308,18 +308,86 @@ public void request(Payload grpcRequest, StreamObserver<Payload> responseObserve
 
 `ClientRegisterServiceEvent`被`ClientServiceIndexesManager`订阅
 
-<img src="./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109210850719.png" alt="image-20241109210850719" style="zoom:150%;" />
+事件发生时，进入`onEvent`方法，如果是事件类型是客户端注册服务事件，调用`addPublisherIndexes`
 
-如果是事件类型是客户端注册服务事件，调用`addPublisherIndexes`
+<img src="./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109210850719.png" alt="image-20241109210850719" style="zoom:150%;" />
 
 ``addPublisherIndexes` 方法的作用是将新的服务实例（由 `clientId` 标识）注册到服务（`service`）的发布者列表中，并发布`ServiceChangedEvent`事件，通知所有监听器服务数据已经发生了变化
 
 ![image-20241109211751434](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109211751434.png)
 
+##### 5.推送实例信息到其他客户端
+
 `NamingSubscriberServiceV2Impl`类订阅了`ServiceChangedEvent`
 
-当 `ServiceChangedEvent` 事件发生时，`NamingSubscriberServiceV2Impl` 会将服务变更信息封装成 `PushDelayTask`，然后添加到延迟任务执行引擎 `PushDelayTaskExecuteEngine` 中，以便稍后推送给所有订阅了该服务的客户端
+当 `ServiceChangedEvent` 事件发生时，`NamingSubscriberServiceV2Impl` 会将服务变更信息封装成 `PushDelayTask`，然后添加到延迟任务执行引擎 `` 中，以便稍后推送给所有订阅了该服务的客户端
 
 `PushDelayTask` 在 Nacos 中是一个用于处理服务推送延迟任务的类。它主要负责在服务注册或变更时，将最新的服务实例列表推送给所有订阅了该服务的客户端
 
 ![image-20241109213109934](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109213109934.png)
+
+`PushDelayTaskExecuteEngine` 继承了 `NacosDelayTaskExecuteEngine`
+
+![image-20241110172031608](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110172031608.png)
+
+`NacosDelayTaskExecuteEngine`的构造函数中初始化了`tasks`任务列表，还定义了一个单线程的延迟任务执行器`processingExecutor`, 定时执行`ProcessRunnable`任务
+
+![image-20241110172724023](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110172724023.png)
+
+`ProcessRunnable`实现了`Runnable`接口，调用`processTasks`方法处理实例注册任务
+
+![image-20241110172709799](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110172709799.png)
+
+![image-20241110173016094](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110173016094.png)
+
+上面的`processor`是 推送延迟任务处理器：`PushDelayTaskProcessor`，调用`process`方法
+
+从task拿到服务信息，封装成 `PushExecuteTask`,调度器调用执行引擎指定推送任务。
+
+![image-20241110183725281](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110183725281.png)
+
+核心逻辑在`PushExecuteTask`的`run`方法中，生成包装器，然后向客户端的全部订阅者或者部分客户端推送数据
+
+![image-20241110184854642](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110184854642.png)
+
+
+
+#### 注册永久实例
+
+##### 1. 注册实例接口
+
+注册永久实例首先需要修改实例的配置信息，然后启动 nacos 集群
+
+```properties
+spring.cloud.nacos.discovery.ephemeral=false
+```
+
+前面讲过，注册永久实例是通过HTTP调用的方式，我们可以看下官方给出的[`OpenAPI指南`](https://nacos.io/zh-cn/docs/open-api.html)
+
+![image-20241110190247838](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110190247838.png)
+
+请求路径为`/nacos/v1/ns/instance`,如果你直接在源码中 ctrl+shif+f 是搜不到的，因为它是由几个常量组成的
+
+![image-20241110190521110](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110190521110.png)
+
+注册实例由`InstanceController`的`register`方法实现
+
+![image-20241110191304164](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110191304164.png)
+
+`InstanceOperatorClientImpl#registerInstance`方法检查实例参数合法性，封装服务信息，继续调用service注册实例
+
+![image-20241110191824730](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110191824730.png)
+
+##### 2. ClientOperationService
+
+`ClientOperationService`接口中定义了注册和注销实例的方法，分别有注册临时实例和永久实例两种实现
+
+![image-20241110192627682](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110192627682.png)
+
+![image-20241110192452043](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110192452043.png)
+
+因为我们是注册永久实例，所以调用`PersistentClientOperationServiceImpl`的`registerInstance`方法
+
+![image-20241110194717154](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110194717154.png)
+
+##### 3.JRaft
