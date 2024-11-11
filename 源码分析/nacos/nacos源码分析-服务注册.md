@@ -5,6 +5,8 @@
 > spring-cloud-starter-alibaba-nacos-discovery-2021.0.5.0.jar
 >
 > Maven: 3.8.8
+>
+> 我的Nacos仓库：https://github.com/wangyong5609/nacos，分支：2.4.3-analysis
 
 ## 一、Nacos简介
 
@@ -33,7 +35,13 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 简单来说就是，项目引入 `spring-cloud-starter-alibaba-nacos-discovery` 以后，利用Spring的自动装配，在它的`spring.facotries`中加载了 `NacosServiceRegistryAutoConfiguration`, `NacosServiceRegistryAutoConfiguration` 中加载了一个叫 `NacosAutoServiceRegistration` 的Bean，
 
-这个Bean的父类实现了 `ApplicationListener` 这个接口，并监听了`WebServerInitializedEvent`类型的事件，在Tomcat启动后会发布`WebServerInitializedEvent`的事件，事件被监听到以后，就会调用 `NacosServiceRegistry`的 `register` 方法向Nacos服务端注册实例。
+这个Bean的父类实现了 `ApplicationListener` 这个接口，并监听了`WebServerInitializedEvent`类型的事件，在Tomcat启动后会发布`WebServerInitializedEvent`的事件，事件被监听到以后，就会调用 `NacosServiceRegistry`的 `register` 方法向Nacos服务端注册实例，临时实例使用 RPC 调用，永久实例使用 HTTP 调用。
+
+
+
+服务端处理请求原理图：
+
+
 
 ## 三、源码分析
 
@@ -266,7 +274,7 @@ public void onApplicationEvent(ContextRefreshedEvent event) {
 
 ![image-20241109130421143](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241109130421143.png)
 
-可以看到注入了 `RequestHandlerRegistry`, 在下面的 `request`方法中从`RequestHandlerRegistry`取出对应请求类型的hanlder，然后调用`handle`方法。 
+可以看到注入了 `RequestHandlerRegistry`, 在下面的 `request`方法中从`RequestHandlerRegistry`取出对应请求类型的hanlder，然后调用`handleRequest`方法。 
 
 ```java
 @Override
@@ -320,7 +328,7 @@ public void request(Payload grpcRequest, StreamObserver<Payload> responseObserve
 
 `NamingSubscriberServiceV2Impl`类订阅了`ServiceChangedEvent`
 
-当 `ServiceChangedEvent` 事件发生时，`NamingSubscriberServiceV2Impl` 会将服务变更信息封装成 `PushDelayTask`，然后添加到延迟任务执行引擎 `` 中，以便稍后推送给所有订阅了该服务的客户端
+当 `ServiceChangedEvent` 事件发生时，`NamingSubscriberServiceV2Impl` 会将服务变更信息封装成 `PushDelayTask`，然后添加到延迟任务执行引擎 `PushDelayTaskExecuteEngine` 中，以便稍后推送给所有订阅了该服务的客户端
 
 `PushDelayTask` 在 Nacos 中是一个用于处理服务推送延迟任务的类。它主要负责在服务注册或变更时，将最新的服务实例列表推送给所有订阅了该服务的客户端
 
@@ -390,4 +398,167 @@ spring.cloud.nacos.discovery.ephemeral=false
 
 ![image-20241110194717154](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C.assets/image-20241110194717154.png)
 
-##### 3.JRaft
+##### 3. JRaft实现CP模型
+
+上面源码截图中，有一句关键代码`protocol.write(writeRequest)`, 那么 `protocol`是什么呢？
+
+![image-20241111123843539](./nacos源码分析-服务注册.assets/image-20241111123843539.png)
+
+`protocol`是一个`CPProtocol`类型的成员变量，在`PersistentClientOperationServiceImpl`的构造函数中通过`ProtocolManager`获取并赋值给`protocol`。
+
+看下`getCpProtocol`方法做了什么
+
+![image-20241111124403018](./nacos源码分析-服务注册.assets/image-20241111124403018.png)
+
+拿到`CPProtocol`类型的Bean并执行初始化，`CPProtocol`类型的Bean只有一个：`JRaftProtocol`,  在继续看源码之前，先了解一下什么是 `JRaft`
+
+
+
+JRaft 是一个纯 Java 开发的 Raft 算法实现库，它基于百度的 braft 实现而来，并使用 Java 重写了所有功能。以下是 JRaft 支持的主要功能：
+
+1. **Raft 协议实现**：JRaft 提供了 Raft 一致性算法的核心实现，包括领导者选举、日志复制、持久化和快照等。
+
+2. **领导者选举**：JRaft 支持自动的领导者选举机制，能够在当前领导者失败时快速选举出新的领导者。
+3. **日志复制**：JRaft 实现了日志复制功能，确保集群中的所有节点都能保持日志的一致性。
+4. **数据持久化**：JRaft 支持数据的持久化存储，确保节点重启后能够恢复到之前的状态。
+5. **快照机制**：为了优化性能和减少存储空间的使用，JRaft 提供了快照机制，可以将当前状态保存为快照文件。
+6. **数据恢复**：JRaft 支持从快照和日志中恢复数据，以便在节点故障后快速恢复服务。
+7. **读写一致性**：JRaft 提供了线性一致性和最终一致性的读写操作，以满足不同的业务需求。
+8. **集群管理**：JRaft 允许动态地添加、移除和配置 Raft 集群中的节点。
+9. **异步接口**：JRaft 提供了异步接口，支持非阻塞的读写操作，提高系统的吞吐量。
+10. **多线程支持**：JRaft 支持多线程环境，可以在高并发场景下工作。
+11. **客户端支持**：JRaft 提供了客户端库，使得客户端可以轻松地与 Raft 集群交互。
+12. **容错机制**：JRaft 实现了容错机制，能够在节点故障时继续提供服务。
+13. **可插拔的存储和网络层**：JRaft 允许用户自定义存储和网络层，以适应不同的存储和网络环境。
+14. **监控和日志**：JRaft 提供了监控接口和详细的日志输出，方便用户监控集群状态和调试问题。
+15. **跨平台**：JRaft 可以在多种操作系统和平台上运行，具有良好的跨平台性。
+
+> 更多信息参考 [`JRaft用户指南`](https://www.sofastack.tech/projects/sofa-jraft/jraft-user-guide/)
+
+Nacos 在设计时考虑了CAP理论，并提供了两种一致性模型：AP（Availability & Partition tolerance）和CP（Consistency & Partition tolerance）。
+
+1. **AP模型**：Nacos默认采用AP模型，即在网络分区的情况下，优先保证系统的可用性，而不是一致性。这意味着在网络分区时，Nacos仍然可以对外提供服务，但可能会出现数据不一致的情况。AP模型适用于对可用性要求较高，但对一致性要求相对较低的场景，例如电商系统中的服务发现和配置管理。
+2. **CP模型**：Nacos也支持CP模型，即在网络分区的情况下，优先保证数据的一致性，而不是可用性。这意味着在网络分区时，Nacos可能会暂时无法对外提供服务，直到网络恢复并达到一致性。CP模型适用于对一致性要求较高，但对可用性要求相对较低的场景，例如金融系统中的数据一致性至关重要，因此可能需要选择CP模型。
+
+> `Nacos2.X`版本采用 JRaft 框架实现`CP`模型
+
+
+
+继续看源码，`JRaftProtocol` Bean的`init`方法，初始化并启动 JRaft Server
+
+![image-20241111131709997](./nacos源码分析-服务注册.assets/image-20241111131709997.png)
+
+启动 JRaftServer
+
+![image-20241111162702811](./nacos源码分析-服务注册.assets/image-20241111162702811.png)
+
+创建多 Raft 组
+
+```java
+// com.alibaba.nacos.core.distributed.raft.JRaftServer#createMultiRaftGroup
+synchronized void createMultiRaftGroup(Collection<RequestProcessor4CP> processors) {
+    // There is no reason why the LogProcessor cannot be processed because of the synchronization
+    if (!this.isStarted) {
+        this.processors.addAll(processors);
+        return;
+    }
+    // 定义 parentPath 为 nacos.home下的data/protocol/raft 目录
+    final String parentPath = Paths.get(EnvUtil.getNacosHome(), "data/protocol/raft").toString();
+
+    for (RequestProcessor4CP processor : processors) {
+        // 获取处理器的 groupName, 如：naming_persistent_service_v2
+        final String groupName = processor.group();
+        // 检查 multiRaftGroup 中是否已存在该 groupName，如果存在则抛出 DuplicateRaftGroupException。
+        if (multiRaftGroup.containsKey(groupName)) {
+            throw new DuplicateRaftGroupException(groupName);
+        }
+
+        // 复制当前的 Configuration 和 NodeOptions
+        // Ensure that each Raft Group has its own configuration and NodeOptions
+        Configuration configuration = conf.copy();
+        NodeOptions copy = nodeOptions.copy();
+        // 初始化目录
+        JRaftUtils.initDirectory(parentPath, groupName, copy);
+
+        // 创建 NacosStateMachine 并设置到 NodeOptions 中
+        // 在这里，LogProcessor被传递给StateMachine，当StateMachine触发onApply时，实际调用LogProcessor的onApply
+        // 比如调用PersistentClientOperationServiceImpl的onApply去注册实例
+        NacosStateMachine machine = new NacosStateMachine(this, processor);
+
+        copy.setFsm(machine);
+        copy.setInitialConf(configuration);
+
+        // Set snapshot interval, default 1800 seconds 设置快照间隔，默认1800秒
+        int doSnapshotInterval = ConvertUtils.toInt(raftConfig.getVal(RaftSysConstants.RAFT_SNAPSHOT_INTERVAL_SECS),
+                RaftSysConstants.DEFAULT_RAFT_SNAPSHOT_INTERVAL_SECS);
+
+        // If the business module does not implement a snapshot processor, cancel the snapshot
+        doSnapshotInterval = CollectionUtils.isEmpty(processor.loadSnapshotOperate()) ? 0 : doSnapshotInterval;
+
+        copy.setSnapshotIntervalSecs(doSnapshotInterval);
+        Loggers.RAFT.info("create raft group : {}", groupName);
+        // 创建 RaftGroupService 并启动节点
+        RaftGroupService raftGroupService = new RaftGroupService(groupName, localPeerId, copy, rpcServer, true);
+
+        // Because BaseRpcServer has been started before, it is not allowed to start again here
+        Node node = raftGroupService.start(false);
+        machine.setNode(node);
+        // 更新 RouteTable 配置
+        RouteTable.getInstance().updateConfiguration(groupName, configuration);
+
+        // 注册自己到集群中
+        RaftExecutor.executeByCommon(() -> registerSelfToCluster(groupName, localPeerId, configuration));
+
+        // Turn on the leader auto refresh for this group
+        Random random = new Random();
+        long period = nodeOptions.getElectionTimeoutMs() + random.nextInt(5 * 1000);
+        // 设置定时任务定期刷新路由表
+        RaftExecutor.scheduleRaftMemberRefreshJob(() -> refreshRouteTable(groupName),
+                nodeOptions.getElectionTimeoutMs(), period, TimeUnit.MILLISECONDS);
+        // 将 Raft 组信息存储到 multiRaftGroup 中
+        multiRaftGroup.put(groupName, new RaftGroupTuple(node, processor, raftGroupService, machine));
+    }
+}
+```
+
+上面代码中重点是 Nacos 状态机的创建，注册了`processor`(这里注册的是永久实例，所以`processor`是`PersistentClientOperationServiceImpl`)。
+
+将`Task`提交到`sofa-jraft`框架后，当超半数节点commit log成功，最终会调用用户实现的状态机的`onApply`方法
+
+> 释义来自 [JRaft 用户指南](https://www.sofastack.tech/projects/sofa-jraft/jraft-user-guide/)
+
+![image-20241111150336558](./nacos源码分析-服务注册.assets/image-20241111150336558.png)
+
+
+
+以上就是`protocol`变量的一个初始化过程，然后继续看`protocol.write(writeRequest)`这行代码，进入`JRaftProtocol`类`commit`方法处理注册请求
+
+![image-20241111141333646](./nacos源码分析-服务注册.assets/image-20241111141333646.png)
+
+![image-20241111141825526](./nacos源码分析-服务注册.assets/image-20241111141825526.png)
+
+`commit`方法的核心是`applyOperation`方法，就算不是 Leader 节点，转发请求以后，最终还是会由 Leader 节点执行`applyOperation`
+
+![image-20241111144824139](./nacos源码分析-服务注册.assets/image-20241111144824139.png)
+
+调用`node.apply`方法，这里使用`sofa-jraft`的`Node.apply(Task)`方法提交本次写入请求到Raft集群
+
+上面在创建 Nacos 状态机 那里提到，请求提交给 Raft 集群后，最终会调用用户实现的状态机的`onApply`方法
+
+下面看下 Nacos 状态机`onApply`的实现
+
+![image-20241111153555093](./nacos源码分析-服务注册.assets/image-20241111153555093.png)
+
+如果是写请求，则调用`processor`的`onApply`方法，我们是写入永久实例，这里注册的`processor`是`PersistentClientOperationServiceImpl`
+
+如果是注册实例，调用`onInstanceRegister`
+
+![image-20241111154312180](./nacos源码分析-服务注册.assets/image-20241111154312180.png)
+
+![image-20241111154710628](./nacos源码分析-服务注册.assets/image-20241111154710628.png)
+
+最终发布了客户端注册事件，后面的逻辑就和注册临时实例一样了。
+
+
+
+> 感谢看到这里的朋友，如果你觉得写的还行或者对你有帮助，希望能求一个赞，如果你觉得文章很垃圾，也希望你能提出宝贵的意见，非常感谢
