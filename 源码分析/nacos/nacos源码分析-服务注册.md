@@ -27,7 +27,7 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 ## 二、服务注册原理
 
-客户端请求原理图：
+### 1.客户端请求原理图
 
 > Processon 地址：https://www.processon.com/diagraming/672d9c0ca8011b320f4a064c
 
@@ -39,9 +39,27 @@ Nacos 是一个更易于构建云原生应用的动态服务发现、配置管�
 
 
 
-服务端处理请求原理图：
+### 2.服务端处理请求原理图
 
+![Nacos服务注册原理-服务端](./nacos源码分析-服务注册.assets/Nacos服务注册原理-服务端.png)
 
+**注册临时实例：**
+
+`RequestHandlerRegistry`监听了`ContextRefreshedEvent`事件，在 Springboot 启动时context初始化完成后，通知`RequestHandlerRegistry`开始注册`RequestHandler`的全部实现类，这里面就包括`InstanceRequestHandler`。
+
+注册实例的 grpc 请求会被`GrpcRequestAcceptor`接口, 从`RequestHandlerRegistry`中拿到`InstanceRequestHandler`处理实例注册请求，然后调用`EphemeralClientOperationServiceImpl.registerInstance() `, 发布客户端注册事件`ClientRegisterServiceEvent`.
+
+**注册永久实例：**
+
+在Springboot 启动时会加载Bean`PersistentClientOperationServiceImpl`,初始化`CPProtocol`, 创建 `NacosStateMachine`, 并向状态机注册请求处理器`EphemeralClientOperationServiceImpl`， 启动`RaftServer`集群。
+
+注册实例的 HTTP 请求进入`InstanceController`的`register`方法，然后调用`EphemeralClientOperationServiceImplde`的`registerInstance()`方法，提交注册请求给 raft 集群，集群会让 Leader 节点处理本次写操作，最终会由状态机注册的`processor`也就是`EphemeralClientOperationServiceImpl`处理，调用它的`onApply`方法，发布客户端注册事件`ClientRegisterServiceEvent`.
+
+**处理客户端注册事件**
+
+监听客户端注册事件的`ClientServiceIndexesManager`收到通知以后，将实例信息保存到本地注册表，并发布`ServiceChangedEvent`事件通知其他客户端，
+
+`NamingSubscriberServiceV2Impl`监听到`ServiceChangedEvent`发布后，创建信息推送任务，添加到延迟任务执行引擎`PushDelayTaskExecuteEngine`, 引擎执行推送任务。
 
 ## 三、源码分析
 
@@ -225,7 +243,7 @@ public void cacheInstanceForRedo(String serviceName, String groupName, Instance 
 
 ##### 4.2 永久实例
 
-永久使用调用 `NamingHttpClientProxy#registerService`注册
+永久实例调用 `NamingHttpClientProxy#registerService`注册
 
 ![image-20241108122242165](./nacos源码分析-服务注册.assets/image-20241108122242165.png)
 
@@ -557,7 +575,7 @@ synchronized void createMultiRaftGroup(Collection<RequestProcessor4CP> processor
 
 ![image-20241111154710628](./nacos源码分析-服务注册.assets/image-20241111154710628.png)
 
-最终发布了客户端注册事件，后面的逻辑就和注册临时实例一样了。
+最终发布了客户端注册事件`ClientRegisterServiceEvent`，后面的逻辑就和注册临时实例时发布客户端注册事件`ClientRegisterServiceEvent`一样了。
 
 
 
