@@ -32,7 +32,27 @@
 
 ### 2. NacosConfigManager
 
+主要用于管理和操作 Nacos 配置相关的功能。它提供了一种简便的方式来获取、更新和管理 Nacos 配置中心中的配置信息，支持动态配置更新，允许应用在运行时获取最新的配置，而不需要重启应用。
 
+来看下`NacosConfigManager`的构造函数做了什么：
+
+![image-20241114173808589](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114173808589.png)
+
+上面创建的 Bean `NacosConfigProperties` 作为参数传入构造函数，将配置信息交给 `NacosConfigManager`管理，并且调用`createConfigService`创建 `ConfigService`。
+
+![image-20241114174513189](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114174513189.png)
+
+`createConfigService`方法中通过反射的方式调用构造函数创建了`NacosConfigService`
+
+#### 2.1 NacosConfigService
+
+`NacosConfigService` 是 Nacos 客户端中的一个核心类，负责与 Nacos 配置中心进行交互。它提供了多种方法来获取、发布和管理配置数据。这个类是 Nacos Java 客户端的主要入口之一，允许开发者方便地操作 Nacos 配置。
+
+![image-20241114174851225](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114174851225.png)
+
+
+
+![image-20241114175748329](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114175748329.png)
 
 
 
