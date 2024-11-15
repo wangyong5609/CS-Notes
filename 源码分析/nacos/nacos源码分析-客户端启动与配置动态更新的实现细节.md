@@ -149,14 +149,16 @@ public void start() throws NacosException {
 
 
 
-#### 2.3 监听配置
+#### 2.3 动态监听和更新配置
+
+`executeConfigListen()` 方法通过管理缓存数据的监听和更新，确保应用能够及时响应配置的变化。它实现了配置的动态监听，通过网络请求与配置中心进行交互，确保本地配置的有效性和一致性。
+
+> 方法比较复杂，看一遍有个印象就行，下面会对重点进行分析
 
 ```java
 // 本地缓存
 private final AtomicReference<Map<String, CacheData>> cacheMap = new AtomicReference<>(new HashMap<>());
 ```
-
-
 
 ```java
 public void executeConfigListen() {
@@ -217,7 +219,7 @@ public void executeConfigListen() {
                 timestampMap.put(GroupKey.getKeyTenant(cacheData.dataId, cacheData.group, cacheData.tenant),
                         cacheData.getLastModifiedTs().longValue());
             }
-						// 构建请求，
+						// 构建请求，获取更新了的配置信息
             ConfigBatchListenRequest configChangeListenRequest = buildConfigRequest(listenCaches);
             configChangeListenRequest.setListen(true);
             try {
@@ -236,6 +238,7 @@ public void executeConfigListen() {
                                     .getKeyTenant(changeConfig.getDataId(), changeConfig.getGroup(),
                                             changeConfig.getTenant());
                             changeKeys.add(changeKey);
+                            // 更新本地缓存状态
                             refreshContentAndCheck(changeKey);
                         }
 
@@ -275,7 +278,7 @@ public void executeConfigListen() {
             }
         }
     }
-
+		// 对于需要移除监听的缓存，构建请求并发送，成功后从缓存中移除
     if (!removeListenCachesMap.isEmpty()) {
         for (Map.Entry<String, List<CacheData>> entry : removeListenCachesMap.entrySet()) {
             String taskId = entry.getKey();
@@ -310,7 +313,7 @@ public void executeConfigListen() {
     if (needAllSync) {
         lastAllSyncTime = now;
     }
-    //If has changed keys,notify re sync md5.
+    //如果有变更的键，调用 notifyListenConfig() 方法通知相关监听器。
     if (hasChangedKeys) {
         notifyListenConfig();
     }
@@ -319,7 +322,23 @@ public void executeConfigListen() {
 
 
 
-##### 2.3.1
+##### 2.3.1 检查本地缓存和监听器的一致性
+
+`checkListenerMd5`方法遍历当前 cache 的监听者装饰器，检查他们的 MD5 是否一致，如果不一样，通知监听器
+
+![image-20241115172131360](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115172131360.png)
+
+你可以尝试在 nacos 配置中心修改一个配置，进入`safeNotifyListener`方法
+
+![image-20241115172936989](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115172936989.png)
+
+可以看到当前 cache 和监听者装饰器的 md5 值已经不一样了。
+
+然后创建了一个可执行任务，丢给监听器自己的执行器或者`CacheData`内自己的执行器
+
+![image-20241115173808078](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115173808078.png)
+
+**通知任务**
 
 
 
