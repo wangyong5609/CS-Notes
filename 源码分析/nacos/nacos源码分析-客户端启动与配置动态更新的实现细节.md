@@ -46,13 +46,292 @@
 
 #### 2.1 NacosConfigService
 
-`NacosConfigService` 是 Nacos 客户端中的一个核心类，负责与 Nacos 配置中心进行交互。它提供了多种方法来获取、发布和管理配置数据。这个类是 Nacos Java 客户端的主要入口之一，允许开发者方便地操作 Nacos 配置。
+`NacosConfigService` 是 Nacos 客户端中的一个核心类，负责与 Nacos 配置中心进行交互。`NacosConfigService`实现了`ConfigService`接口，可以从下图看到，`ConfigService`接口定义了发布、获取、移除、监听配置的接口，提供了多种方法来获取、发布和管理配置数据的功能。这个类是 Nacos Java 客户端的主要入口之一，允许开发者方便地操作 Nacos 配置。
+
+![image-20241114175748329](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114175748329.png)
+
+继续看`NacosConfigService`的构造函数
 
 ![image-20241114174851225](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114174851225.png)
 
+```java
+public NacosConfigService(Properties properties) throws NacosException {
+    // 派生 properties 并生成NacosClientProperties
+    final NacosClientProperties clientProperties = NacosClientProperties.PROTOTYPE.derive(properties);
+    // 检查 contextPath 是否符合正则
+    ValidatorUtils.checkInitParam(clientProperties);
+		
+    // 初始化命名空间
+    initNamespace(clientProperties);
+    // 配置过滤器链
+    this.configFilterChainManager = new ConfigFilterChainManager(clientProperties.asProperties());
+    // 管理服务器列表，它的成员变量isFixed决定它使用固定的服务器列表还是动态的从 nacos 拉取服务器列表
+    ServerListManager serverListManager = new ServerListManager(clientProperties);
+    // 如果是动态获取服务器列表，就从 nacos 服务端拉取
+    serverListManager.start();
+		
+  	// 初始化 ClientWorker 实例，负责长轮询和配置管理
+    this.worker = new ClientWorker(this.configFilterChainManager, serverListManager, clientProperties);
+    // will be deleted in 2.0 later versions
+    // ServerHttpAgent 是一个用于与 Nacos 服务器进行 HTTP 通信的代理类。它负责处理 HTTP 请求（GET、POST、DELETE 等）
+    agent = new ServerHttpAgent(serverListManager);
+
+}
+```
+
+重点是创建`ClientWorker`实例，配置管理和长轮训就是它实现的，先看下它的构造函数
+
+#### 2.1 ClientWorker
+
+```java
+public ClientWorker(final ConfigFilterChainManager configFilterChainManager, ServerListManager serverListManager,
+        final NacosClientProperties properties) throws NacosException {
+    this.configFilterChainManager = configFilterChainManager;
+		
+    init(properties);
+		
+  	// 创建ConfigTransportClient
+    agent = new ConfigRpcTransportClient(properties, serverListManager);
+  	// 根据系统的处理器核心数和一个指定的线程倍数，计算出一个适合的工作线程数，THREAD_MULTIPLE为 1，假如服务器是 2 核，那 count 就是 2
+    int count = ThreadUtils.getSuitableThreadCount(THREAD_MULTIPLE);
+  	// 创建线程池
+    ScheduledExecutorService executorService = Executors
+            .newScheduledThreadPool(Math.max(count, MIN_THREAD_NUM), r -> {
+                Thread t = new Thread(r);
+                t.setName("com.alibaba.nacos.client.Worker");
+                t.setDaemon(true);
+                return t;
+            });
+    agent.setExecutor(executorService);
+    agent.start();
+}
+```
+
+重点是 **`agen.start`**方法，前面都是为启动它做准备
+
+`start`方法启动了一个安全代理，并且每 5 秒登录一次，维持会话的有效性；然后调用`startInternal`方法执行核心逻辑
+
+```java
+public void start() throws NacosException {
+      securityProxy.login(this.properties);
+  		// 定时登录
+      this.executor.scheduleWithFixedDelay(() -> securityProxy.login(properties), 0,
+              this.securityInfoRefreshIntervalMills, TimeUnit.MILLISECONDS);
+      startInternal();
+}
+```
+
+**`startInternal`**方法比较有意思
+
+1. **调度任务**：
+
+   - `executor.schedule(...)`：使用 `ScheduledExecutorService` 的 `schedule` 方法安排一个任务。这个任务将在立即执行（延迟为 0 毫秒）。
+
+2. **循环监听**：
+
+   - `while (!executor.isShutdown() && !executor.isTerminated())`：这个循环会持续运行，直到 `executor` 被关闭或终止。它确保在调度任务未被停止的情况下持续进行配置监听。
+
+3. **阻塞等待**：
+
+   - `listenExecutebell`是一个容易为 1 的有界阻塞队列
+
+   - `listenExecutebell.poll(5L, TimeUnit.SECONDS);`：从 `listenExecutebell` 队列中尝试获取一个元素。如果队列在 5 秒内没有可用的元素，`poll` 方法将返回 `null`。这提供了一个阻塞的等待机制，允许该线程在没有新事件的情况下休眠一段时间。
+
+4. **条件检查**：
+
+   - `if (executor.isShutdown() || executor.isTerminated()) { continue; }`：如果在 `poll` 后发现 `executor` 已经被关闭或终止，继续下一个循环。这样可以确保在处理配置监听逻辑之前，检查是否还需要继续运行。
+
+5. **执行监听逻辑**：
+
+   - `executeConfigListen();`：如果 `executor` 仍在运行且队列有元素可用，调用 `executeConfigListen()` 方法来处理配置监听的逻辑。
+
+![image-20241115105321347](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115105321347.png)
 
 
-![image-20241114175748329](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114175748329.png)
+
+#### 2.3 监听配置
+
+```java
+// 本地缓存
+private final AtomicReference<Map<String, CacheData>> cacheMap = new AtomicReference<>(new HashMap<>());
+```
+
+
+
+```java
+public void executeConfigListen() {
+
+    Map<String, List<CacheData>> listenCachesMap = new HashMap<>(16);
+    Map<String, List<CacheData>> removeListenCachesMap = new HashMap<>(16);
+    long now = System.currentTimeMillis();
+    // 5 分钟全量同步一次
+    boolean needAllSync = now - lastAllSyncTime >= ALL_SYNC_INTERNAL;
+    for (CacheData cache : cacheMap.get().values()) {
+
+        synchronized (cache) {
+
+            // 检查本地缓存的 MD5和监听器的 Md5 一致性
+            if (cache.isSyncWithServer()) {
+                cache.checkListenerMd5();
+                if (!needAllSync) {
+                    continue;
+                }
+            }
+						// 如果缓存没被丢弃（当缓存不被任何监听器监听时，就会丢弃）
+            if (!cache.isDiscard()) {
+                // 如果缓存未丢弃且未使用本地配置信息，则将其添加到需要监听的缓存列表中
+                if (!cache.isUseLocalConfigInfo()) {
+                    List<CacheData> cacheDatas = listenCachesMap.get(String.valueOf(cache.getTaskId()));
+                    if (cacheDatas == null) {
+                        cacheDatas = new LinkedList<>();
+                        listenCachesMap.put(String.valueOf(cache.getTaskId()), cacheDatas);
+                    }
+                    cacheDatas.add(cache);
+
+                }
+            } else if (cache.isDiscard()) {
+     						// 如果缓存被丢弃且未使用本地配置信息，则将其添加到需要移除监听的缓存列表中
+                if (!cache.isUseLocalConfigInfo()) {
+                    List<CacheData> cacheDatas = removeListenCachesMap.get(String.valueOf(cache.getTaskId()));
+                    if (cacheDatas == null) {
+                        cacheDatas = new LinkedList<>();
+                        removeListenCachesMap.put(String.valueOf(cache.getTaskId()), cacheDatas);
+                    }
+                    cacheDatas.add(cache);
+
+                }
+            }
+        }
+
+    }
+
+    boolean hasChangedKeys = false;
+		
+    if (!listenCachesMap.isEmpty()) {
+        for (Map.Entry<String, List<CacheData>> entry : listenCachesMap.entrySet()) {
+            String taskId = entry.getKey();
+            Map<String, Long> timestampMap = new HashMap<>(listenCachesMap.size() * 2);
+
+            List<CacheData> listenCaches = entry.getValue();
+            for (CacheData cacheData : listenCaches) {
+                timestampMap.put(GroupKey.getKeyTenant(cacheData.dataId, cacheData.group, cacheData.tenant),
+                        cacheData.getLastModifiedTs().longValue());
+            }
+						// 构建请求，
+            ConfigBatchListenRequest configChangeListenRequest = buildConfigRequest(listenCaches);
+            configChangeListenRequest.setListen(true);
+            try {
+                RpcClient rpcClient = ensureRpcClient(taskId);
+                ConfigChangeBatchListenResponse configChangeBatchListenResponse = (ConfigChangeBatchListenResponse) requestProxy(
+                        rpcClient, configChangeListenRequest);
+                if (configChangeBatchListenResponse.isSuccess()) {
+
+                    Set<String> changeKeys = new HashSet<>();
+                    //handle changed keys,notify listener
+                    if (!CollectionUtils.isEmpty(configChangeBatchListenResponse.getChangedConfigs())) {
+                        hasChangedKeys = true;
+                        for (ConfigChangeBatchListenResponse.ConfigContext changeConfig : configChangeBatchListenResponse
+                                .getChangedConfigs()) {
+                            String changeKey = GroupKey
+                                    .getKeyTenant(changeConfig.getDataId(), changeConfig.getGroup(),
+                                            changeConfig.getTenant());
+                            changeKeys.add(changeKey);
+                            refreshContentAndCheck(changeKey);
+                        }
+
+                    }
+
+                    //handler content configs
+                    for (CacheData cacheData : listenCaches) {
+                        String groupKey = GroupKey
+                                .getKeyTenant(cacheData.dataId, cacheData.group, cacheData.getTenant());
+                        if (!changeKeys.contains(groupKey)) {
+                            //sync:cache data md5 = server md5 && cache data md5 = all listeners md5.
+                            synchronized (cacheData) {
+                                if (!cacheData.getListeners().isEmpty()) {
+
+                                    Long previousTimesStamp = timestampMap.get(groupKey);
+                                    if (previousTimesStamp != null && !cacheData.getLastModifiedTs()
+                                            .compareAndSet(previousTimesStamp, System.currentTimeMillis())) {
+                                        continue;
+                                    }
+                                    cacheData.setSyncWithServer(true);
+                                }
+                            }
+                        }
+
+                        cacheData.setInitializing(false);
+                    }
+
+                }
+            } catch (Exception e) {
+
+                LOGGER.error("Async listen config change error ", e);
+                try {
+                    Thread.sleep(50L);
+                } catch (InterruptedException interruptedException) {
+                    //ignore
+                }
+            }
+        }
+    }
+
+    if (!removeListenCachesMap.isEmpty()) {
+        for (Map.Entry<String, List<CacheData>> entry : removeListenCachesMap.entrySet()) {
+            String taskId = entry.getKey();
+            List<CacheData> removeListenCaches = entry.getValue();
+            ConfigBatchListenRequest configChangeListenRequest = buildConfigRequest(removeListenCaches);
+            configChangeListenRequest.setListen(false);
+            try {
+                RpcClient rpcClient = ensureRpcClient(taskId);
+                boolean removeSuccess = unListenConfigChange(rpcClient, configChangeListenRequest);
+                if (removeSuccess) {
+                    for (CacheData cacheData : removeListenCaches) {
+                        synchronized (cacheData) {
+                            if (cacheData.isDiscard()) {
+                                ClientWorker.this
+                                        .removeCache(cacheData.dataId, cacheData.group, cacheData.tenant);
+                            }
+                        }
+                    }
+                }
+
+            } catch (Exception e) {
+                LOGGER.error("async remove listen config change error ", e);
+            }
+            try {
+                Thread.sleep(50L);
+            } catch (InterruptedException interruptedException) {
+                //ignore
+            }
+        }
+    }
+
+    if (needAllSync) {
+        lastAllSyncTime = now;
+    }
+    //If has changed keys,notify re sync md5.
+    if (hasChangedKeys) {
+        notifyListenConfig();
+    }
+}
+```
+
+
+
+##### 2.3.1
+
+
+
+##### 2.3.2 请求 Nacos 服务器做 MD5 对比
+
+将被监听的缓存配置信息批量提交给 nacos 服务端做 MD5 对比
+
+![image-20241115142824287](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115142824287.png)
+
+![image-20241115143813186](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115143813186.png)
+
+
 
 
 
