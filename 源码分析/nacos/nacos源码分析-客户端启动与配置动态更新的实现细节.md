@@ -81,7 +81,7 @@ public NacosConfigService(Properties properties) throws NacosException {
 
 重点是创建`ClientWorker`实例，配置管理和长轮训就是它实现的，先看下它的构造函数
 
-#### 2.1 ClientWorker
+#### 2.2 ClientWorker
 
 ```java
 public ClientWorker(final ConfigFilterChainManager configFilterChainManager, ServerListManager serverListManager,
@@ -179,7 +179,7 @@ public void executeConfigListen() {
                     continue;
                 }
             }
-						// 如果缓存没被丢弃（当缓存不被任何监听器监听时，就会丢弃）
+			// 如果缓存没被丢弃（当缓存不被任何监听器监听时，就会丢弃）
             if (!cache.isDiscard()) {
                 // 如果缓存未丢弃且未使用本地配置信息，则将其添加到需要监听的缓存列表中
                 if (!cache.isUseLocalConfigInfo()) {
@@ -192,7 +192,7 @@ public void executeConfigListen() {
 
                 }
             } else if (cache.isDiscard()) {
-     						// 如果缓存被丢弃且未使用本地配置信息，则将其添加到需要移除监听的缓存列表中
+     			// 如果缓存被丢弃且未使用本地配置信息，则将其添加到需要移除监听的缓存列表中
                 if (!cache.isUseLocalConfigInfo()) {
                     List<CacheData> cacheDatas = removeListenCachesMap.get(String.valueOf(cache.getTaskId()));
                     if (cacheDatas == null) {
@@ -219,7 +219,7 @@ public void executeConfigListen() {
                 timestampMap.put(GroupKey.getKeyTenant(cacheData.dataId, cacheData.group, cacheData.tenant),
                         cacheData.getLastModifiedTs().longValue());
             }
-						// 构建请求，获取更新了的配置信息
+			// 构建请求，获取更新了的配置信息
             ConfigBatchListenRequest configChangeListenRequest = buildConfigRequest(listenCaches);
             configChangeListenRequest.setListen(true);
             try {
@@ -322,7 +322,7 @@ public void executeConfigListen() {
 
 
 
-##### 2.3.1 检查本地缓存和监听器的一致性
+##### 2.3.1 检查本地缓存和监听者装饰器的一致性
 
 `checkListenerMd5`方法遍历当前 cache 的监听者装饰器，检查他们的 MD5 是否一致，如果不一样，通知监听器
 
@@ -334,26 +334,88 @@ public void executeConfigListen() {
 
 可以看到当前 cache 和监听者装饰器的 md5 值已经不一样了。
 
-然后创建了一个可执行任务，丢给监听器自己的执行器或者`CacheData`内自己的执行器
+然后创建了一个可执行任务，丢给监听器自己的执行器或者`CacheData`类的执行器
 
 ![image-20241115173808078](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115173808078.png)
 
-**通知任务**
+##### 2.3.2 **通知任务**(配置更新入口)
+
+> 配置更新的关键入口就是这里啦，后面讲配置动态更新就从这里入手
+
+下面是 job 的关键代码：
+
+- 创建`ConfigResponse`对象，并设置数据ID、组、内容和加密数据键
+- 使用过滤器链过滤，将过滤后的内容通过`listener.receiveConfigInfo`方法通知给监听器
+- 如果监听器是`AbstractConfigChangeListener`的实例，那么解析配置变更数据，并通知监听器配置变更事件
+- 更新监听器装饰器的最后调用 md5 值
+
+![image-20241116184134619](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116184134619.png)
 
 
 
-##### 2.3.2 请求 Nacos 服务器做 MD5 对比
+##### 2.3.3 请求 Nacos 服务器做 MD5 对比
 
-将被监听的缓存配置信息批量提交给 nacos 服务端做 MD5 对比
+将被监听的缓存配置信息批量提交给 nacos 服务端做 MD5 对比, 首先构建请求对象
 
 ![image-20241115142824287](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115142824287.png)
 
+将配置的dataId, group, md5, tennat 封装到`configListenContext`，为什么用 MD5，而不是整个配置文件呢？因为传输整个文件会给服务器网络带来巨大的压力，而先对比 MD5 值，如果不一致再拉取配置信息的方式，明显更加节省资源
+
 ![image-20241115143813186](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115143813186.png)
 
+看下图，请求成功以后，如果有配置发生变更，则返回了配置的`group, dataId, tenant`, 将它们组成一个`changeKey`, 调用`refreshContentAndCheck`方法
 
+![image-20241116192924807](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116192924807.png)
+
+`refreshContentAndCheck`方法做了两件事：
+
+- 拉取 nacos 服务端的配置文件信息，请求超时时间为 30S，更新到本地缓存`cacheData`
+- 调用`checkListenerMd5`方法检查本地缓存和监听者装饰器 `md5` 值是否一致，如果不一致，通知监听者
+
+![image-20241116193458433](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116193458433.png)
 
 
 
 ### 3. NacosPropertySourceLocator
 
+`NacosPropertySourceLocator` 是用于从 Nacos 配置中心加载配置的核心类,通过实现 `PropertySourceLocator` 接口并使用 `@Order(0)` 注解设置优先级，使其在 Spring 应用启动时能够优先加载配置
+
 ![image-20241114160229534](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114160229534.png)
+
+它的构造函数通过接收 `NacosConfigManager` 实例来初始化类，并获取 Nacos 配置属性
+
+![image-20241116195707257](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116195707257.png)
+
+`NacosPropertySourceLocator`实现了 `PropertySourceLocator` 接口的`locate`方法加载配置信息：
+
+- loadSharedConfiguration：就在共享配置。多个服务共享的配置，比如数据源
+- loadExtConfiguration：加载扩展配置
+- loadApplicationConfiguration：加载应用程序特定的配置
+
+
+
+![image-20241116204212161](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116204212161.png)
+
+
+
+## 配置动态更新基石：ConfigurationPropertiesRebinder
+
+**`ConfigurationPropertiesRebinder`** 是 Spring Cloud context的一个类，通常与动态配置更新相关。它的主要作用是支持在运行时重新绑定配置属性，以实现配置的动态更新。
+
+主要方法：`rebind()`, 用于触发重新绑定。当配置源中的配置发生变化时，相关的监听器会调用 `rebind` 方法，从而使得 Spring 容器中的 Bean 能够获得最新的配置值
+
+![image-20241116211218979](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116211218979.png)
+
+
+
+
+
+![image-20241116213944841](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116213944841.png)
+
+代码执行到137行，销毁当前的 bean，此时配置中的 'name'还是张三
+
+![image-20241116214148371](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116214148371.png)
+
+代码执行到139行时，bean 已经重新初始化完成，变成了 nacos 中最新修改的值
+
+![image-20241116214342287](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116214342287.png)
