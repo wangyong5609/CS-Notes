@@ -1,18 +1,23 @@
+Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还可以作为配置中心使用。
+
+本文围绕以下两个问题展开：
+
+- 客户端启动时是如何从 nacos 服务端拉取并加载配置？
+- 配置如何动态更新？
+
 ## 启动加载 NacosConfigBootstrapConfiguration
 
 `Springboot`在启动的时候会读取 `spring-cloud-starter-alibaba-nacos-config-2021.0.5.0.jar`下的 `spring.factories`加载`com.alibaba.cloud.nacos.NacosConfigBootstrapConfiguration`
 
 ![image-20241114152350162](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114152350162.png)
 
-调用`org.springframework.core.io.support.SpringFactoriesLoader#loadFactoryNames`获取工厂类型名为`org.springframework.cloud.bootstrap.BootstrapConfiguration`的 类名列表。`org.springframework.cloud.bootstrap.BootstrapConfiguration`就是上面 `spring.factories`中的 `KEY`值
+调用`SpringFactoriesLoader#loadFactoryNames`获取工厂类型名为`org.springframework.cloud.bootstrap.BootstrapConfiguration`的 类名列表。`org.springframework.cloud.bootstrap.BootstrapConfiguration`就是上面 `spring.factories`中的 `KEY`值
 
 `loadSpringFactories`是加载 `spring.factories`文件的具体执行方法，返回一个`HashMap`。
 
 ![image-20241114153917736](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114153917736.png)
 
 ![image-20241114152249007](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114152249007.png)
-
-
 
 ## NacosConfigBootstrapConfiguration
 
@@ -32,7 +37,7 @@
 
 ### 2. NacosConfigManager
 
-主要用于管理和操作 Nacos 配置相关的功能。它提供了一种简便的方式来获取、更新和管理 Nacos 配置中心中的配置信息，支持动态配置更新，允许应用在运行时获取最新的配置，而不需要重启应用。
+主要用于管理和操作 Nacos 配置相关的功能。它提供了一种简便的方式来获取、更新和管理 Nacos 配置中心中的配置信息。
 
 来看下`NacosConfigManager`的构造函数做了什么：
 
@@ -79,9 +84,13 @@ public NacosConfigService(Properties properties) throws NacosException {
 }
 ```
 
-重点是创建`ClientWorker`实例，配置管理和长轮训就是它实现的，先看下它的构造函数
+重点是创建`ClientWorker`实例，配置管理和长轮训就是它实现的
 
 #### 2.2 ClientWorker
+
+`ClientWorker` 主要用于封装与 Nacos 配置服务的交互逻辑，提供配置的获取、监听和更新等功能。它确保了客户端能够高效地与 Nacos 服务器通信，并管理配置的生命周期。
+
+构造函数：
 
 ```java
 public ClientWorker(final ConfigFilterChainManager configFilterChainManager, ServerListManager serverListManager,
@@ -355,6 +364,10 @@ public void executeConfigListen() {
 
 ##### 2.3.3 请求 Nacos 服务器做 MD5 对比
 
+继续看`executeConfigListen`方法，下面这段代码的目的就是发送一个超时时间为 **30s** 的请求询问配置中心，哪些配置改了
+
+![image-20241117184559908](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241117184559908.png)
+
 将被监听的缓存配置信息批量提交给 nacos 服务端做 MD5 对比, 首先构建请求对象
 
 ![image-20241115142824287](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115142824287.png)
@@ -388,29 +401,35 @@ public void executeConfigListen() {
 
 `NacosPropertySourceLocator`实现了 `PropertySourceLocator` 接口的`locate`方法加载配置信息：
 
-- loadSharedConfiguration：就在共享配置。多个服务共享的配置，比如数据源
+- loadSharedConfiguration：加载共享配置。多个服务共享的配置，比如数据源
 - loadExtConfiguration：加载扩展配置
 - loadApplicationConfiguration：加载应用程序特定的配置
 
-
-
 ![image-20241116204212161](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116204212161.png)
 
-
+// todo 配置优先级
 
 ## 配置动态更新基石：ConfigurationPropertiesRebinder
 
-**`ConfigurationPropertiesRebinder`** 是 Spring Cloud context的一个类，通常与动态配置更新相关。它的主要作用是支持在运行时重新绑定配置属性，以实现配置的动态更新。
+**`** 是 Spring Cloud context的一个类，通常与动态配置更新相关。它的主要作用是支持在运行时重新绑定配置属性，以实现配置的动态更新。
 
 主要方法：`rebind()`, 用于触发重新绑定。当配置源中的配置发生变化时，相关的监听器会调用 `rebind` 方法，从而使得 Spring 容器中的 Bean 能够获得最新的配置值
 
 ![image-20241116211218979](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116211218979.png)
 
+`ConfigurationPropertiesRebinder` 实现`ApplicationListener`接口，监听了`EnvironmentChangeEvent`，这个事件在 Spring 的环境（`Environment`）发生变化时发布。
+
+![image-20241117170445658](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241117170445658.png)
+
+接着看核心方法：rebind(), 我在 nacos console 修改配置触发重新绑定。
 
 
 
+在下main断点处可以看到，我使用了注解` @ConfigurationProperties`的类`MyAppProperties`需要重新绑定。
 
 ![image-20241116213944841](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116213944841.png)
+
+进入`rebind(String name, ApplicationContext appContext)`方法，进行 bean 的销毁和初始化
 
 代码执行到137行，销毁当前的 bean，此时配置中的 'name'还是张三
 
@@ -419,3 +438,15 @@ public void executeConfigListen() {
 代码执行到139行时，bean 已经重新初始化完成，变成了 nacos 中最新修改的值
 
 ![image-20241116214342287](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116214342287.png)
+
+这样，配置动态更新就完成了，销毁和重新初始化 bean 不是本文的重点，感兴趣可自行研究。
+
+
+
+## NacosContextRefresher.onApplicationEvent
+
+## 在 nacos 配置中心更新配置后发生了什么
+
+
+
+## 
