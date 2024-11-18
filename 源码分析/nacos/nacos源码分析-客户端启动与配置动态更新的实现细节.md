@@ -84,7 +84,7 @@ public NacosConfigService(Properties properties) throws NacosException {
 }
 ```
 
-重点是创建`ClientWorker`实例，配置管理和长轮训就是它实现的
+重点在于创建`ClientWorker`实例
 
 #### 2.2 ClientWorker
 
@@ -389,7 +389,7 @@ public void executeConfigListen() {
 
 
 
-### 3. NacosPropertySourceLocator
+### 3. 加载服务端配置信息：NacosPropertySourceLocator
 
 `NacosPropertySourceLocator` 是用于从 Nacos 配置中心加载配置的核心类,通过实现 `PropertySourceLocator` 接口并使用 `@Order(0)` 注解设置优先级，使其在 Spring 应用启动时能够优先加载配置
 
@@ -407,7 +407,25 @@ public void executeConfigListen() {
 
 ![image-20241116204212161](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116204212161.png)
 
-// todo 配置优先级
+上面三个方法会根据你在本地`spring.cloud.nacos.config`的配置加载不同类型的配置 。
+
+![image-20241118111615456](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118111615456.png)
+
+最终都是调用**`com.alibaba.cloud.nacos.client.NacosPropertySourceBuilder#loadNacosData`**方法，使用 `NacosConfigService`实例请求 Nacos 服务端拉取配置信息。
+
+> 上面`2.1`小节讲过`NacosConfigService`提供了多种方法来获取、发布和管理配置数据的功能。
+
+![image-20241118110850881](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118110850881.png)
+
+加载完成的多属性源示例如下：
+
+![image-20241118110032241](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118110032241.png)
+
+**总结：**
+
+​	本文的第一个问题（客户端启动时是如何从 nacos 服务端拉取并加载配置？）到此就有答案了。在 Springboot 启动时优先加载 Bean `NacosPropertySourceLocator`, 根据本地`spring.cloud.nacos.config`的配置依次加载共享配置，扩展配置，应用配置，底层是使用`NacosConfigService`与 Nacos 服务端交互拉取配置信息。
+
+
 
 ## 配置动态更新基石：ConfigurationPropertiesRebinder
 
@@ -443,10 +461,78 @@ public void executeConfigListen() {
 
 
 
-## NacosContextRefresher.onApplicationEvent
+## 刷新 Nacos 配置：NacosContextRefresher
 
-## 在 nacos 配置中心更新配置后发生了什么
+在上面`2.3.2`小节提到过，当客户端检测到服务端配置发生改变，会通知监听者，那么谁是监听者，又是如何注册的呢？这就涉及到一个类：**`NacosContextRefresher`**。
+
+![image-20241118140322678](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118140322678.png)
+
+![image-20241118140450609](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118140450609.png)
+
+作者在类注释写道：在应用程序启动时，NacosContextRefresher 向所有应用程序级别的 dataId 添加 nacos 监听器，当数据发生变化时，监听器将刷新配置。
+
+### 1. 在应用程序启动时添加监听器
+
+首先，在应用程序启动时就添加监听器依赖于它实现了`ApplicationListener`接口，并且监听了`ApplicationReadyEvent`事件。Spring 应用程序的上下文完全启动后触发`ApplicationReadyEvent`事件，进入 `NacosContextRefresher.onApplicationEvent()`。
+
+![image-20241118141410638](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118141410638.png)
+
+### 2. 注册 Nacos 监听器
+
+接着为所有应用程序级别的 dataId 添加 nacos 监听器
+
+![image-20241118141741320](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118141741320.png)
+
+![image-20241118142756028](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118142756028.png)
+
+- 以 group 和 dataId 为 key，添加一个`NacosContextRefresher`监听者到`listenerMap`中。
+- `NacosContextRefresher`实现了 `innerReveive`方法，接收更新后的配置信息，更新刷新次数，添加新配置信息到刷新历史记录链表头部，**发布`RefreshEvent`事件**。
+- 添加监听者到`NacosConfigService`实例
+
+### 3. 添加监听器到 CacheData
+
+在`2.2`提到过，`ClientWorker` 主要用于封装与 Nacos 配置服务的交互逻辑，提供配置的获取、监听和更新等功能，这里将监听者注册到 ClientWorker，配置发生变更时通知监听者。
+
+![image-20241118143646906](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118143646906.png)
+
+监听器最终是添加到`CacheData`实例的，在绑定之前，先确保不同租户和 group 下的 dataId 使用唯一的缓存数据。调用`addCacheDataIfAbsent`，如果缓存不存则创建。
+
+![image-20241118144812449](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118144812449.png)
+
+`cache`有个属性：`taskId`，它的值是 `cacheMap` 的数量除以 `perTaskConfigSize`（3000）的商。通过 RPC 长链接获取服务端配置数据时，`taskId`将决定使用哪一个`rpcClient`。简单来说就是 3000 个 cache 使用同一个长链接，这样做是为了控制报文大小，提高性能
+
+![image-20241118151548148](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118151548148.png)
+
+`cache` 创建完成，然后调用`addListener`添加监听器。这里使用了装饰模式为`listener`添加了额外属性：md5 串，配置信息。然后将装饰对象添加到`listeners`中。
+
+![image-20241118160159666](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118160159666.png)
+
+## 事件驱动配置动态更新
+
+上面**`2.3.2 `通知任务(配置更新入口)** 提到过，当配置发生变更，将调用监听者的`receiveConfigInfo`方法推送配置给监听者。我们注册到 cache 的监听者是`NacosContextRefresher`, `NacosContextRefresher`中的`receiveConfigInfo`方法会发布一个`RefreshEvent`事件。
+
+`RefreshEventListener`监听了`RefreshEvent`事件，调用 `ContextRefresher#refresh`方法处理事件。
+
+![image-20241118164133098](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118164133098.png)
+
+ `refresh`方法调用`refreshEnvironment()`发布了一个环境改变事件**`EnvironmentChangeEvent`**。
+
+![image-20241118164429414](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118164429414.png)
+
+配置动态更新的基石：ConfigurationPropertiesRebinder 监听了`EnvironmentChangeEvent`，于是触发了 bean 重新绑定，这样在 nacos console 修改的配置信息就更新到 spring 的运行环境中了。
+
+到此本文的第二个问题（配置如何动态更新？）就解决了。
+
+![image-20241118164844528](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118164844528.png)
 
 
 
-## 
+## 总结
+
+客户端启动与配置动态更新的实现细节可以简单总结为以下几点：
+
+- 启动加载`spring.factories`中的 `NacosConfigBootstrapConfiguration`，实例化`NacosConfigProperties`，`NacosConfigManager`, `NacosPropertySourceLocator`
+- `NacosConfigManager`创建`NacosConfigService`与配置中心交互，提供获取配置，监听配置等的重要功能
+- 使用长链接定时与服务端做配置数据MD5对比，监听服务端配置信息变更，发布事件通知监听者 `NacosContextRefresher`
+- 监听者`NacosContextRefresher接收配置信息，发布环境变更事件
+- 触发`ConfigurationPropertiesRebinder`，销毁并重新初始化配置信息 Bean
