@@ -13,7 +13,7 @@ Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还�
 >
 > 其他作者分享的一份更细致的流程图：https://www.processon.com/view/link/62d678c31e08531cf8db16ef
 
-![Nacos 配置中心原理-客户端 (1)](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/Nacos 配置中心原理-客户端 (1).png)
+![Nacos 配置中心原理-客户端 (1)](https://qny.bbbwdc.com/blog/Nacos 配置中心原理-客户端 (1).png)
 
 
 
@@ -21,21 +21,21 @@ Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还�
 
 `Springboot`在启动的时候会读取 `spring-cloud-starter-alibaba-nacos-config-2021.0.5.0.jar`下的 `spring.factories`加载`com.alibaba.cloud.nacos.NacosConfigBootstrapConfiguration`
 
-![image-20241114152350162](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114152350162.png)
+![image-20241114152350162](https://qny.bbbwdc.com/blog/image-20241114152350162.png)
 
 调用`SpringFactoriesLoader#loadFactoryNames`获取工厂类型名为`org.springframework.cloud.bootstrap.BootstrapConfiguration`的 类名列表。`org.springframework.cloud.bootstrap.BootstrapConfiguration`就是上面 `spring.factories`中的 `KEY`值
 
 `loadSpringFactories`是加载 `spring.factories`文件的具体执行方法，返回一个`HashMap`。
 
-![image-20241114153917736](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114153917736.png)
+![image-20241114153917736](https://qny.bbbwdc.com/blog/image-20241114153917736.png)
 
-![image-20241114152249007](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114152249007.png)
+![image-20241114152249007](https://qny.bbbwdc.com/blog/image-20241114152249007.png)
 
 ## NacosConfigBootstrapConfiguration
 
 `NacosConfigBootstrapConfiguration` 是 Spring Cloud Alibaba 中与 Nacos 配置管理相关的一个配置类。它主要用于在 Spring Boot 应用程序中引导 Nacos 配置的加载和管理。
 
-![image-20241114155252523](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114155252523.png)
+![image-20241114155252523](https://qny.bbbwdc.com/blog/image-20241114155252523.png)
 
 配置类中一共加载了四个`Bean`，它们的作用如下：
 
@@ -43,7 +43,7 @@ Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还�
 
 `NacosConfigProperties`用于封装与 Nacos 配置相关的属性。它提供了对 Nacos 配置中心的连接和配置管理所需的各种设置。
 
-![image-20241114155745939](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114155745939.png)
+![image-20241114155745939](https://qny.bbbwdc.com/blog/image-20241114155745939.png)
 
 
 
@@ -53,11 +53,11 @@ Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还�
 
 来看下`NacosConfigManager`的构造函数做了什么：
 
-![image-20241114173808589](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114173808589.png)
+![image-20241114173808589](https://qny.bbbwdc.com/blog/image-20241114173808589.png)
 
 上面创建的 Bean `NacosConfigProperties` 作为参数传入构造函数，将配置信息交给 `NacosConfigManager`管理，并且调用`createConfigService`创建 `ConfigService`。
 
-![image-20241114174513189](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114174513189.png)
+![image-20241114174513189](https://qny.bbbwdc.com/blog/image-20241114174513189.png)
 
 `createConfigService`方法中通过反射的方式调用构造函数创建了`NacosConfigService`
 
@@ -65,11 +65,11 @@ Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还�
 
 `NacosConfigService` 是 Nacos 客户端中的一个核心类，负责与 Nacos 配置中心进行交互。`NacosConfigService`实现了`ConfigService`接口，可以从下图看到，`ConfigService`接口定义了发布、获取、移除、监听配置的接口，提供了多种方法来获取、发布和管理配置数据的功能。这个类是 Nacos Java 客户端的主要入口之一，允许开发者方便地操作 Nacos 配置。
 
-![image-20241114175748329](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114175748329.png)
+![image-20241114175748329](https://qny.bbbwdc.com/blog/image-20241114175748329.png)
 
 继续看`NacosConfigService`的构造函数
 
-![image-20241114174851225](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114174851225.png)
+![image-20241114174851225](https://qny.bbbwdc.com/blog/image-20241114174851225.png)
 
 ```java
 public NacosConfigService(Properties properties) throws NacosException {
@@ -166,7 +166,7 @@ public void start() throws NacosException {
 
    - `executeConfigListen();`：如果 `executor` 仍在运行且队列有元素可用，调用 `executeConfigListen()` 方法来处理配置监听的逻辑。
 
-![image-20241115105321347](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115105321347.png)
+![image-20241115105321347](https://qny.bbbwdc.com/blog/image-20241115105321347.png)
 
 
 
@@ -347,17 +347,17 @@ public void executeConfigListen() {
 
 `checkListenerMd5`方法遍历当前 cache 的监听者装饰器，检查他们的 MD5 是否一致，如果不一样，通知监听器
 
-![image-20241115172131360](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115172131360.png)
+![image-20241115172131360](https://qny.bbbwdc.com/blog/image-20241115172131360.png)
 
 你可以尝试在 nacos 配置中心修改一个配置，进入`safeNotifyListener`方法
 
-![image-20241115172936989](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115172936989.png)
+![image-20241115172936989](https://qny.bbbwdc.com/blog/image-20241115172936989.png)
 
 可以看到当前 cache 和监听者装饰器的 md5 值已经不一样了。
 
 然后创建了一个可执行任务，丢给监听器自己的执行器或者`CacheData`类的执行器
 
-![image-20241115173808078](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115173808078.png)
+![image-20241115173808078](https://qny.bbbwdc.com/blog/image-20241115173808078.png)
 
 ##### 2.3.2 **通知任务**(配置更新入口)
 
@@ -370,7 +370,7 @@ public void executeConfigListen() {
 - 如果监听器是`AbstractConfigChangeListener`的实例，那么解析配置变更数据，并通知监听器配置变更事件
 - 更新监听器装饰器的最后调用 md5 值
 
-![image-20241116184134619](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116184134619.png)
+![image-20241116184134619](https://qny.bbbwdc.com/blog/image-20241116184134619.png)
 
 
 
@@ -378,26 +378,26 @@ public void executeConfigListen() {
 
 继续看`executeConfigListen`方法，下面这段代码的目的就是发送一个超时时间为 **30s** 的请求询问配置中心，哪些配置改了
 
-![image-20241117184559908](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241117184559908.png)
+![image-20241117184559908](https://qny.bbbwdc.com/blog/image-20241117184559908.png)
 
 将被监听的缓存配置信息批量提交给 nacos 服务端做 MD5 对比, 首先构建请求对象
 
-![image-20241115142824287](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115142824287.png)
+![image-20241115142824287](https://qny.bbbwdc.com/blog/image-20241115142824287.png)
 
 将配置的dataId, group, md5, tennat 封装到`configListenContext`，为什么用 MD5，而不是整个配置文件呢？因为传输整个文件会给服务器网络带来巨大的压力，而先对比 MD5 值，如果不一致再拉取配置信息的方式，明显更加节省资源
 
-![image-20241115143813186](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241115143813186.png)
+![image-20241115143813186](https://qny.bbbwdc.com/blog/image-20241115143813186.png)
 
 看下图，请求成功以后，如果有配置发生变更，则返回了配置的`group, dataId, tenant`, 将它们组成一个`changeKey`, 调用`refreshContentAndCheck`方法
 
-![image-20241116192924807](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116192924807.png)
+![image-20241116192924807](https://qny.bbbwdc.com/blog/image-20241116192924807.png)
 
 `refreshContentAndCheck`方法做了两件事：
 
 - 拉取 nacos 服务端的配置文件信息，请求超时时间为 30S，更新到本地缓存`cacheData`
 - 调用`checkListenerMd5`方法检查本地缓存和监听者装饰器 `md5` 值是否一致，如果不一致，通知监听者
 
-![image-20241116193458433](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116193458433.png)
+![image-20241116193458433](https://qny.bbbwdc.com/blog/image-20241116193458433.png)
 
 
 
@@ -405,11 +405,11 @@ public void executeConfigListen() {
 
 `NacosPropertySourceLocator` 是用于从 Nacos 配置中心加载配置的核心类,通过实现 `PropertySourceLocator` 接口并使用 `@Order(0)` 注解设置优先级，使其在 Spring 应用启动时能够优先加载配置
 
-![image-20241114160229534](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241114160229534.png)
+![image-20241114160229534](https://qny.bbbwdc.com/blog/image-20241114160229534.png)
 
 它的构造函数通过接收 `NacosConfigManager` 实例来初始化类，并获取 Nacos 配置属性
 
-![image-20241116195707257](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116195707257.png)
+![image-20241116195707257](https://qny.bbbwdc.com/blog/image-20241116195707257.png)
 
 `NacosPropertySourceLocator`实现了 `PropertySourceLocator` 接口的`locate`方法加载配置信息：
 
@@ -417,21 +417,21 @@ public void executeConfigListen() {
 - loadExtConfiguration：加载扩展配置
 - loadApplicationConfiguration：加载应用程序特定的配置
 
-![image-20241116204212161](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116204212161.png)
+![image-20241116204212161](https://qny.bbbwdc.com/blog/image-20241116204212161.png)
 
 上面三个方法会根据你在本地`spring.cloud.nacos.config`的配置加载不同类型的配置 。
 
-![image-20241118111615456](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118111615456.png)
+![image-20241118111615456](https://qny.bbbwdc.com/blog/image-20241118111615456.png)
 
 最终都是调用**`com.alibaba.cloud.nacos.client.NacosPropertySourceBuilder#loadNacosData`**方法，使用 `NacosConfigService`实例请求 Nacos 服务端拉取配置信息。
 
 > 上面`2.1`小节讲过`NacosConfigService`提供了多种方法来获取、发布和管理配置数据的功能。
 
-![image-20241118110850881](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118110850881.png)
+![image-20241118110850881](https://qny.bbbwdc.com/blog/image-20241118110850881.png)
 
 加载完成的多属性源示例如下：
 
-![image-20241118110032241](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118110032241.png)
+![image-20241118110032241](https://qny.bbbwdc.com/blog/image-20241118110032241.png)
 
 **总结：**
 
@@ -445,11 +445,11 @@ public void executeConfigListen() {
 
 主要方法：`rebind()`, 用于触发重新绑定。当配置源中的配置发生变化时，相关的监听器会调用 `rebind` 方法，从而使得 Spring 容器中的 Bean 能够获得最新的配置值
 
-![image-20241116211218979](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116211218979.png)
+![image-20241116211218979](https://qny.bbbwdc.com/blog/image-20241116211218979.png)
 
 `ConfigurationPropertiesRebinder` 实现`ApplicationListener`接口，监听了`EnvironmentChangeEvent`，这个事件在 Spring 的环境（`Environment`）发生变化时发布。
 
-![image-20241117170445658](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241117170445658.png)
+![image-20241117170445658](https://qny.bbbwdc.com/blog/image-20241117170445658.png)
 
 接着看核心方法：rebind(), 我在 nacos console 修改配置触发重新绑定。
 
@@ -457,17 +457,17 @@ public void executeConfigListen() {
 
 在下main断点处可以看到，我使用了注解` @ConfigurationProperties`的类`MyAppProperties`需要重新绑定。
 
-![image-20241116213944841](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116213944841.png)
+![image-20241116213944841](https://qny.bbbwdc.com/blog/image-20241116213944841.png)
 
 进入`rebind(String name, ApplicationContext appContext)`方法，进行 bean 的销毁和初始化
 
 代码执行到137行，销毁当前的 bean，此时配置中的 'name'还是张三
 
-![image-20241116214148371](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116214148371.png)
+![image-20241116214148371](https://qny.bbbwdc.com/blog/image-20241116214148371.png)
 
 代码执行到139行时，bean 已经重新初始化完成，变成了 nacos 中最新修改的值
 
-![image-20241116214342287](./nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%85%8D%E7%BD%AE%E5%8A%A8%E6%80%81%E6%9B%B4%E6%96%B0%E7%9A%84%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82.assets/image-20241116214342287.png)
+![image-20241116214342287](https://qny.bbbwdc.com/blog/image-20241116214342287.png)
 
 这样，配置动态更新就完成了，销毁和重新初始化 bean 不是本文的重点，感兴趣可自行研究。
 
@@ -477,9 +477,9 @@ public void executeConfigListen() {
 
 在上面`2.3.2`小节提到过，当客户端检测到服务端配置发生改变，会通知监听者，那么谁是监听者，又是如何注册的呢？这就涉及到一个类：**`NacosContextRefresher`**。
 
-![image-20241118140322678](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118140322678.png)
+![image-20241118140322678](https://qny.bbbwdc.com/blog/image-20241118140322678.png)
 
-![image-20241118140450609](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118140450609.png)
+![image-20241118140450609](https://qny.bbbwdc.com/blog/image-20241118140450609.png)
 
 作者在类注释写道：在应用程序启动时，NacosContextRefresher 向所有应用程序级别的 dataId 添加 nacos 监听器，当数据发生变化时，监听器将刷新配置。
 
@@ -487,15 +487,15 @@ public void executeConfigListen() {
 
 首先，在应用程序启动时就添加监听器依赖于它实现了`ApplicationListener`接口，并且监听了`ApplicationReadyEvent`事件。Spring 应用程序的上下文完全启动后触发`ApplicationReadyEvent`事件，进入 `NacosContextRefresher.onApplicationEvent()`。
 
-![image-20241118141410638](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118141410638.png)
+![image-20241118141410638](https://qny.bbbwdc.com/blog/image-20241118141410638.png)
 
 ### 2. 注册 Nacos 监听器
 
 接着为所有应用程序级别的 dataId 添加 nacos 监听器
 
-![image-20241118141741320](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118141741320.png)
+![image-20241118141741320](https://qny.bbbwdc.com/blog/image-20241118141741320.png)
 
-![image-20241118142756028](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118142756028.png)
+![image-20241118142756028](https://qny.bbbwdc.com/blog/image-20241118142756028.png)
 
 - 以 group 和 dataId 为 key，添加一个`NacosContextRefresher`监听者到`listenerMap`中。
 - `NacosContextRefresher`实现了 `innerReveive`方法，接收更新后的配置信息，更新刷新次数，添加新配置信息到刷新历史记录链表头部，**发布`RefreshEvent`事件**。
@@ -505,19 +505,19 @@ public void executeConfigListen() {
 
 在`2.2`提到过，`ClientWorker` 主要用于封装与 Nacos 配置服务的交互逻辑，提供配置的获取、监听和更新等功能，这里将监听者注册到 ClientWorker，配置发生变更时通知监听者。
 
-![image-20241118143646906](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118143646906.png)
+![image-20241118143646906](https://qny.bbbwdc.com/blog/image-20241118143646906.png)
 
 监听器最终是添加到`CacheData`实例的，在绑定之前，先确保不同租户和 group 下的 dataId 使用唯一的缓存数据。调用`addCacheDataIfAbsent`，如果缓存不存则创建。
 
-![image-20241118144812449](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118144812449.png)
+![image-20241118144812449](https://qny.bbbwdc.com/blog/image-20241118144812449.png)
 
 `cache`有个属性：`taskId`，它的值是 `cacheMap` 的数量除以 `perTaskConfigSize`（3000）的商。通过 RPC 长链接获取服务端配置数据时，`taskId`将决定使用哪一个`rpcClient`。简单来说就是 3000 个 cache 使用同一个长链接，这样做是为了控制报文大小，提高性能
 
-![image-20241118151548148](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118151548148.png)
+![image-20241118151548148](https://qny.bbbwdc.com/blog/image-20241118151548148.png)
 
 `cache` 创建完成，然后调用`addListener`添加监听器。这里使用了装饰模式为`listener`添加了额外属性：md5 串，配置信息。然后将装饰对象添加到`listeners`中。
 
-![image-20241118160159666](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118160159666.png)
+![image-20241118160159666](https://qny.bbbwdc.com/blog/image-20241118160159666.png)
 
 ## 事件驱动配置动态更新
 
@@ -525,17 +525,17 @@ public void executeConfigListen() {
 
 `RefreshEventListener`监听了`RefreshEvent`事件，调用 `ContextRefresher#refresh`方法处理事件。
 
-![image-20241118164133098](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118164133098.png)
+![image-20241118164133098](https://qny.bbbwdc.com/blog/image-20241118164133098.png)
 
  `refresh`方法调用`refreshEnvironment()`发布了一个环境改变事件**`EnvironmentChangeEvent`**。
 
-![image-20241118164429414](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118164429414.png)
+![image-20241118164429414](https://qny.bbbwdc.com/blog/image-20241118164429414.png)
 
 配置动态更新的基石：ConfigurationPropertiesRebinder 监听了`EnvironmentChangeEvent`，于是触发了 bean 重新绑定，这样在 nacos console 修改的配置信息就更新到 spring 的运行环境中了。
 
 到此本文的第二个问题（配置如何动态更新？）就解决了。
 
-![image-20241118164844528](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/image-20241118164844528.png)
+![image-20241118164844528](https://qny.bbbwdc.com/blog/image-20241118164844528.png)
 
 
 
