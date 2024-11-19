@@ -5,6 +5,18 @@ Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还�
 - 客户端启动时是如何从 nacos 服务端拉取并加载配置？
 - 配置如何动态更新？
 
+## 原理简图
+
+> 读完文章后再看此图更易于理解
+>
+> ProcessOn 链接：https://www.processon.com/diagraming/673474c6cb069f21f520813d
+>
+> 其他作者分享的一份更细致的流程图：https://www.processon.com/view/link/62d678c31e08531cf8db16ef
+
+![Nacos 配置中心原理-客户端 (1)](./nacos源码分析-客户端启动与配置动态更新的实现细节.assets/Nacos 配置中心原理-客户端 (1).png)
+
+
+
 ## 启动加载 NacosConfigBootstrapConfiguration
 
 `Springboot`在启动的时候会读取 `spring-cloud-starter-alibaba-nacos-config-2021.0.5.0.jar`下的 `spring.factories`加载`com.alibaba.cloud.nacos.NacosConfigBootstrapConfiguration`
@@ -429,7 +441,7 @@ public void executeConfigListen() {
 
 ## 配置动态更新基石：ConfigurationPropertiesRebinder
 
-**`** 是 Spring Cloud context的一个类，通常与动态配置更新相关。它的主要作用是支持在运行时重新绑定配置属性，以实现配置的动态更新。
+**`ConfigurationPropertiesRebinder`** 是 Spring Cloud context的一个类，通常与动态配置更新相关。它的主要作用是支持在运行时重新绑定配置属性，以实现配置的动态更新。
 
 主要方法：`rebind()`, 用于触发重新绑定。当配置源中的配置发生变化时，相关的监听器会调用 `rebind` 方法，从而使得 Spring 容器中的 Bean 能够获得最新的配置值
 
@@ -534,5 +546,5 @@ public void executeConfigListen() {
 - 启动加载`spring.factories`中的 `NacosConfigBootstrapConfiguration`，实例化`NacosConfigProperties`，`NacosConfigManager`, `NacosPropertySourceLocator`
 - `NacosConfigManager`创建`NacosConfigService`与配置中心交互，提供获取配置，监听配置等的重要功能
 - 使用长链接定时与服务端做配置数据MD5对比，监听服务端配置信息变更，发布事件通知监听者 `NacosContextRefresher`
-- 监听者`NacosContextRefresher接收配置信息，发布环境变更事件
+- 监听者`NacosContextRefresher`接收配置信息，发布环境变更事件
 - 触发`ConfigurationPropertiesRebinder`，销毁并重新初始化配置信息 Bean
