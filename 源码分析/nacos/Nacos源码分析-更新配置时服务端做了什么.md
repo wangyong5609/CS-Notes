@@ -42,12 +42,16 @@
 
 > 我回看了一下前面的文章，一些不重要的方法也有截图，白白的浪费了大家的阅读时间，对于简单的方法后面只会列出方法调用链路
 
-- `handleConfigDataChange(Event event)` 👇
-- `dumpFormal(String dataId, String group, String tenant, long lastModified, String handleIp)`👇
+- 👇`handleConfigDataChange(Event event)` 
+- 👇`dumpFormal(String dataId, String group, String tenant, long lastModified, String handleIp)`
 
-`dumpFormal`方法作用是转存正式数据到磁盘，向任务管理器`TaskManager`提交了一个 任务`DumpTask`。
+`dumpFormal`方法作用是转存正式数据到磁盘，向任务管理器`dumpTaskMgr`提交了一个 任务`DumpTask`。
 
 ![image-20241121171502273](./Nacos源码分析-更新配置时服务端做了什么.assets/image-20241121171502273.png)
+
+`dumpTaskMgr`是`TaskManager`实例，`DumpService`的构造函数中创建了实例，并且为它指定了`DumpProcessor`作为默认任务处理器
+
+![image-20241122095303734](./Nacos源码分析-更新配置时服务端做了什么.assets/image-20241122095303734.png)
 
 `TaskManager`类本身没有实现执行任务的方法，而是继承自` NacosDelayTaskExecuteEngine`, 来看下他是如何执行任务的。
 
@@ -64,3 +68,31 @@
 `NacosTaskProcessor`是一个处理器接口，他有很多实现，分别用来处理不同的任务
 
 ![image-20241121175209799](./Nacos源码分析-更新配置时服务端做了什么.assets/image-20241121175209799.png)
+
+dump 正式数据是由上面指定的默认任务处理器`DumpProcessor`来处理任务，执行处理器的的`process`方法
+
+- 👇process(NacosTask task)
+- 👇DumpConfigHandler.configDump(build.build())
+- 👇ConfigCacheService.dump(dataId, group, namespaceId, content, lastModified, event.getType(),  event.getEncryptedDataKey())
+- 👇dumpWithMd5(dataId, group, tenant, content, null, lastModifiedTs, type, encryptedDataKey)
+- 👇ConfigDiskServiceFactory.getInstance().saveToDisk(dataId, group, tenant, content)
+
+调用`saveToDisk`方法保存到磁盘；`updateMd5`方法更新本地缓存的 md5和最后更新时间，并发布`LocalDataChangeEvent`事件。
+
+![image-20241122173301754](./Nacos源码分析-更新配置时服务端做了什么.assets/image-20241122173301754.png)
+
+进入`com.alibaba.nacos.config.server.service.dump.disk.ConfigRawDiskService#saveToDisk`, 可以看到`targetFile`就是`nacos.home`下要更新的文件路径，向文件写入新的配置信息。![image-20241122173750569](./Nacos源码分析-更新配置时服务端做了什么.assets/image-20241122173750569.png)
+
+继续看`updateMd5`方法，发布本地数据变更事件，这个事件的目的就是告诉客户端：配置发生了变更
+
+![image-20241122174633242](./Nacos源码分析-更新配置时服务端做了什么.assets/image-20241122174633242.png)
+
+## 通知客户端配置变更
+
+一共有两处监听了本地数据变更事件，先看第一个：`RpcConfigChangeNotifier`
+
+### RpcConfigChangeNotifier
+
+
+
+![image-20241122175117634](./Nacos源码分析-更新配置时服务端做了什么.assets/image-20241122175117634.png)
