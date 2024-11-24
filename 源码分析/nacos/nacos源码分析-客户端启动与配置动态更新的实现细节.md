@@ -13,7 +13,7 @@ Nacos 是 Alibaba 提供的一个开源项目，除了服务发现之外，还�
 >
 > 其他作者分享的一份更细致的流程图：https://www.processon.com/view/link/62d678c31e08531cf8db16ef
 
-![Nacos 配置中心原理-客户端 (1)](https://qny.bbbwdc.com/blog/Nacos 配置中心原理-客户端 (1).png)
+![](https://qny.bbbwdc.com/blog/4523r32r23rdf.png)
 
 
 
