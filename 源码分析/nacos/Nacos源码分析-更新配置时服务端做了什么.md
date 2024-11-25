@@ -186,6 +186,10 @@ Nacos1.*版本 是基于长轮询机制监听配置变更，客户端调用`/nac
 
 ## 原理图
 
+> ProcessOn 地址：https://www.processon.com/diagraming/67400f6a108b5a60353dd0bd
+
+![Nacos配置变更通知集群节点和客户端](./Nacos源码分析-更新配置时服务端做了什么.assets/Nacos配置变更通知集群节点和客户端.png)
+
 ## 总结
 
 现在可以来解答开头的问题了。
