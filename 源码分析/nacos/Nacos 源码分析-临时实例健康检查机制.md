@@ -414,8 +414,8 @@ requestMeta.setAbilityTable(connection.getAbilityTable());
 connectionManager.refreshActiveTime(requestMeta.getConnectionId());
 ```
 
-
-
 ## 总结
 
 临时实例客户端定时向注册中心发送健康检测请求保持实例健康状态，如果注册中心与客户端交互过程中连接断开，注册中心会注销此客户端，并且通知订阅者和集群节点；注册中心还会定时检测过期的客户端连接并剔除，保证其他服务访问的都是健康有效的服务。
+
+> 您的点赞和关注是我写作的最大动力，感谢支持！
