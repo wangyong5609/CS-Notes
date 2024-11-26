@@ -188,7 +188,7 @@ Nacos1.*版本 是基于长轮询机制监听配置变更，客户端调用`/nac
 
 > ProcessOn 地址：https://www.processon.com/diagraming/67400f6a108b5a60353dd0bd
 
-![Nacos配置变更通知集群节点和客户端](https://qny.bbbwdc.com/blog/Nacos配置变更通知集群节点和客户端.png)
+![Nacos配置变更通知集群节点和客户端](https://qny.bbbwdc.com/blog/Nacos%E9%85%8D%E7%BD%AE%E5%8F%98%E6%9B%B4%E9%80%9A%E7%9F%A5%E9%9B%86%E7%BE%A4%E8%8A%82%E7%82%B9%E5%92%8C%E5%AE%A2%E6%88%B7%E7%AB%AF.jpg)
 
 ## 总结
 
