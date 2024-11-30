@@ -1,4 +1,4 @@
-![image-20241130162733261](./Nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%B0%B8%E4%B9%85%E5%AE%9E%E4%BE%8B%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E6%9C%BA%E5%88%B6.assets/image-20241130162733261.png)
+![image-20241130162733261](https://qny.bbbwdc.com/blog/image-20241130162733261.png)
 
 
 
@@ -108,7 +108,7 @@ public void doHealthCheck() {
 
 `HealthCheckProcessorV2Delegate`是一个处理器代理类，代理了四种类型的处理器类，其中三种对应了 Nacos 三种探测的协议，即 Http、TCP 以及 MySQL。
 
-![image-20241129102512083](./Nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%B0%B8%E4%B9%85%E5%AE%9E%E4%BE%8B%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E6%9C%BA%E5%88%B6.assets/image-20241129102512083.png)
+![image-20241129102512083](https://qny.bbbwdc.com/blog/image-20241129102512083.png)
 
 根据健康检查类型获取对应的处理器处理任务。
 
@@ -131,7 +131,7 @@ public void process(HealthCheckTaskV2 task, Service service, ClusterMetadata met
 
 本文分析的是 TCP 健康检查场景，`TcpHealthCheckProcessor`是 TCP 健康检查处理器。
 
-![image-20241129102700323](./Nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%B0%B8%E4%B9%85%E5%AE%9E%E4%BE%8B%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E6%9C%BA%E5%88%B6.assets/image-20241129102700323.png)
+![image-20241129102700323](https://qny.bbbwdc.com/blog/image-20241129102700323.png)
 
 - **Beat**：用于表示一个心跳检查任务。它封装了与健康检查相关的信息，包括服务实例、健康检查任务、元数据等
 - **TimeOutTask**：用于处理连接的超时任务。当某个连接在设定的时间内没有响应时，执行相应的超时处理逻辑
