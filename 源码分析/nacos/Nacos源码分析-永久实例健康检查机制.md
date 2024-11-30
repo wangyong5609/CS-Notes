@@ -1,4 +1,4 @@
-![image.png](https://cdn.nlark.com/yuque/0/2021/png/110282/1638273966070-17a3b2e7-124e-46ad-8221-1f904f0cac14.png#clientId=uc139c711-0875-4&from=paste&height=368&id=ub890028c&originHeight=368&originWidth=676&originalType=binary&ratio=1&rotation=0&showTitle=false&size=24794&status=done&style=none&taskId=u7cf9877c-2b43-498c-88a0-344e2d4100b&title=&width=676)
+![image-20241130162733261](./Nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%B0%B8%E4%B9%85%E5%AE%9E%E4%BE%8B%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E6%9C%BA%E5%88%B6.assets/image-20241130162733261.png)
 
 
 
@@ -108,11 +108,11 @@ public void doHealthCheck() {
 
 `HealthCheckProcessorV2Delegate`是一个处理器代理类，代理了四种类型的处理器类，其中三种对应了 Nacos 三种探测的协议，即 Http、TCP 以及 MySQL。
 
-![image-20241129102512083](./Nacos源码分析-永久实例健康检查机制.assets/image-20241129102512083.png)
+![image-20241129102512083](./Nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%B0%B8%E4%B9%85%E5%AE%9E%E4%BE%8B%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E6%9C%BA%E5%88%B6.assets/image-20241129102512083.png)
 
 根据健康检查类型获取对应的处理器处理任务。
 
-```
+```java
 @Override
 public void process(HealthCheckTaskV2 task, Service service, ClusterMetadata metadata) {
     // tcp health check
@@ -131,7 +131,7 @@ public void process(HealthCheckTaskV2 task, Service service, ClusterMetadata met
 
 本文分析的是 TCP 健康检查场景，`TcpHealthCheckProcessor`是 TCP 健康检查处理器。
 
-![image-20241129102700323](./Nacos源码分析-永久实例健康检查机制.assets/image-20241129102700323.png)
+![image-20241129102700323](./Nacos%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90-%E6%B0%B8%E4%B9%85%E5%AE%9E%E4%BE%8B%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E6%9C%BA%E5%88%B6.assets/image-20241129102700323.png)
 
 - **Beat**：用于表示一个心跳检查任务。它封装了与健康检查相关的信息，包括服务实例、健康检查任务、元数据等
 - **TimeOutTask**：用于处理连接的超时任务。当某个连接在设定的时间内没有响应时，执行相应的超时处理逻辑
@@ -296,7 +296,7 @@ public Void call() {
 
 现在连接建立了，就需要使用 `PostProcessor` 处理每个连接的状态变化.
 
-如果`SelectionKey` 有效且可以连接，说明实例是健康的，调用`beat.finishCheck`记录健康检查结果。
+执行`run()`, 如果`SelectionKey` 有效且可以连接，说明实例是健康的，调用`beat.finishCheck`记录健康检查结果。
 
 ```java
 @Override
@@ -373,7 +373,7 @@ public void finishCheck(boolean success, boolean now, long rt, String msg) {
 }
 ```
 
-这里以检查到实例健康为例，调用`HealthCheckCommonV2#checkOk()`。不论是什么状态，都会修改健康状态并通知集群其他节点，
+这里以检查到实例健康为例，调用`HealthCheckCommonV2#checkOk()`。不论是什么状态，只要状态发生变化，都会修改健康状态并通知集群其他节点。
 
 ```java
 public void checkOk(HealthCheckTaskV2 task, Service service, String msg) {
@@ -504,3 +504,9 @@ public Response onApply(WriteRequest request) {
 4. **不便于集成Nacos客户端的场景**：某些特殊的服务可能由于技术限制或架构设计原因，难以集成Nacos客户端进行心跳续约，这时使用永久实例并通过手动管理来确保服务的注册状态。
 
 根据上述分析，永久实例适用于那些强调服务稳定性和管理便捷性的场景，特别是在基础架构层或对外提供公共服务的组件中。
+
+## 总结
+
+在本文中，我们深入探讨了 Nacos 中永久实例的健康检查机制。文章重点介绍了 TCP 健康检查的实现细节，包括心跳任务的创建与处理过程。永久实例在需要长期稳定的服务中发挥了重要作用，例如数据库服务和基础设施服务。通过这种机制，Nacos确保了服务的可用性和集群的一致性，从而提升了系统的可靠性和可维护性。在实际应用中，根据不同的场景选择合适的实例类型至关重要。
+
+> 您的点赞和关注是我写作的最大动力，感谢支持！
