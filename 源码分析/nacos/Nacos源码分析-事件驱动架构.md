@@ -54,7 +54,7 @@
 
 `Event`是所有事件的抽象类父类，图中以服务注册为例，`ClientOperationEvent`继承了事件基类，并定义了服务注册与注销内部类。
 
-![image-20241203093509733](./Nacos源码分析-事件驱动架构.assets/image-20241203093509733.png)
+![image-20241203093509733](https://qny.bbbwdc.com/blog/image-20241203093509733.png)
 
 ### 3.2 事件订阅者Subscriber
 
@@ -66,7 +66,7 @@
 - `ignoreExpireEvent`:  是否忽略过期事件
 - `scopeMatches`: 事件的范围是否与当前订阅者匹配。默认实现是所有范围都匹配
 
-![image-20241203095345326](./Nacos源码分析-事件驱动架构.assets/image-20241203095345326.png)
+![image-20241203095345326](https://qny.bbbwdc.com/blog/image-20241203095345326.png)
 
 有一个特别的订阅者在服务注册源码中被使用：`SmartSubscriber`。
 
@@ -92,7 +92,7 @@ public abstract class SmartSubscriber extends Subscriber<Event> {
 
 `EventPublisher` 接口是 Nacos 中用于事件发布的核心接口，定义了事件发布器的基本功能和行为。
 
-![image-20241203102003084](./Nacos源码分析-事件驱动架构.assets/image-20241203102003084.png)
+![image-20241203102003084](https://qny.bbbwdc.com/blog/image-20241203102003084.png)
 
 - `publish`: 发布事件。将事件发送到所有注册的订阅者，触发相应的处理逻辑
 - `init`: 初始化事件发布器
@@ -103,7 +103,7 @@ public abstract class SmartSubscriber extends Subscriber<Event> {
 
 `EventPublisher` 接口有多个不同类型的发布器实现，以下是对它们的解析：
 
-![image-20241203101425727](./Nacos源码分析-事件驱动架构.assets/image-20241203101425727.png)
+![image-20241203101425727](https://qny.bbbwdc.com/blog/image-20241203101425727.png)
 
 - `DefaultPublisher`: 默认发布器，主要作用是将事件广播到所有注册的订阅者
 - `ShardedEventPublisher`: 分片事件发布器，旨在将事件发布负载分散到多个发布器上，从而提高系统的可扩展性和性能
@@ -115,7 +115,7 @@ public abstract class SmartSubscriber extends Subscriber<Event> {
 
 `NotifyCenter` 是 Nacos 中用于事件通知的核心组件，在事件驱动架构中充当了事件的“邮递员”，负责将事件从发布者传递到所有感兴趣的订阅者。发布者与订阅者不直接交互，降低耦合，便于扩展且提升系统处理性能。
 
-![image-20241203155433728](./Nacos源码分析-事件驱动架构.assets/image-20241203155433728.png)
+![image-20241203155433728](https://qny.bbbwdc.com/blog/image-20241203155433728.png)
 
 以下是一些重要的属性和方法解析：
 
@@ -184,7 +184,7 @@ public void registerInstance(Service service, Instance instance, String clientId
 
 订阅者订阅事件，那么谁是客户端注册服务事件的订阅者呢？要找到它的订阅者，就要去找继承`Subscriber`类并订阅`ClientRegisterServiceEvent`的代码，类似这样：`extends Subscriber<ClientRegisterServiceEvent>`。
 
-![image-20241204155952191](./Nacos源码分析-事件驱动架构.assets/image-20241204155952191.png)
+![image-20241204155952191](https://qny.bbbwdc.com/blog/image-20241204155952191.png)
 
 在事件类的用法中，并没有找到类似的代码，却有一段代码是添加这个事件类:`result.add(ClientOperationEvent.ClientRegisterServiceEvent.class);`;还记得上面提到了一个特殊的订阅者：`SmartSubscriber`,它可以订阅多种事件。`ClientServiceIndexesManager`继承了`SmartSubscriber`, 订阅了多个客户端操作事件，就包括客户端注册服务事件。
 
