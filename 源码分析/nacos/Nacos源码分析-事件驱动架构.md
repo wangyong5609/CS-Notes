@@ -113,7 +113,7 @@ public abstract class SmartSubscriber extends Subscriber<Event> {
 
 ### 3.4 通知中心NotifyCenter
 
-`NotifyCenter` 是 Nacos 中用于事件通知的核心组件，负责管理事件的发布和订阅机制。`NotifyCenter` 在事件驱动架构中充当了事件的“邮递员”，负责将事件从产生方传递到所有感兴趣的接收方。这种设计不仅降低了组件之间的耦合度，还提高了系统的灵活性和响应能力，使得 Nacos 能够高效地管理服务和配置的变化。
+`NotifyCenter` 是 Nacos 中用于事件通知的核心组件，在事件驱动架构中充当了事件的“邮递员”，负责将事件从发布者传递到所有感兴趣的订阅者。发布者与订阅者不直接交互，降低耦合，便于扩展且提升系统处理性能。
 
 ![image-20241203155433728](./Nacos源码分析-事件驱动架构.assets/image-20241203155433728.png)
 
@@ -136,24 +136,227 @@ private DefaultSharePublisher sharePublisher;
 
 ## 4. 源码分析
 
+下面以注册临时实例流程为例分析事件发布订阅通知的流程。涉及以下核心类：
 
+- com.alibaba.nacos.naming.controllers.v2.**InstanceControllerV2**
+- com.alibaba.nacos.naming.core.**InstanceOperatorClientImpl**
+- com.alibaba.nacos.naming.core.v2.service.impl.**EphemeralClientOperationServiceImpl**
+- com.alibaba.nacos.naming.core.v2.index.**ClientServiceIndexesManager**
 
-- 4.1 事件处理模块概述
-  - 4.1.1 关键类和接口
-- 4.2 事件的注册与订阅机制
-  - 4.2.1 事件监听器的实现
-  - 4.2.2 事件通知的流程
-- 4.3 事件的处理逻辑
-  - 4.3.1 事件处理的核心类
-  - 4.3.2 事件处理的异步与同步机制
+### 4.1 发布客户端注册服务事件ClientRegisterServiceEvent
 
+从接收到注册临时实例的 HTTP 请求到发布客户端注册服务事件的方法调用流程
 
+- `InstanceControllerV2#register()`
+- `InstanceOperatorClientImpl#registerInstance()`
+- `EphemeralClientOperationServiceImpl#registerInstance()` 
 
+在`registerInstance`方法中发布了客户端注册服务事件`ClientRegisterServiceEvent`。
 
+```java
+// EphemeralClientOperationServiceImpl#registerInstance
+public void registerInstance(Service service, Instance instance, String clientId) throws NacosException {
+    // 检查实例参数
+    NamingUtils.checkInstanceIsLegal(instance);
+    // 获取服务实例发布信息,如namespace,group,name等
+    Service singleton = ServiceManager.getInstance().getSingleton(service);
+    // 如果当前服务是持久服务，不能注册临时实例
+    if (!singleton.isEphemeral()) {
+        throw new NacosRuntimeException(NacosException.INVALID_PARAM,
+                String.format("Current service %s is persistent service, can't register ephemeral instance.",
+                        singleton.getGroupedServiceName()));
+    }
+    Client client = clientManager.getClient(clientId);
+    checkClientIsLegal(client, clientId);
+    InstancePublishInfo instanceInfo = getPublishInfo(instance);
+    client.addServiceInstance(singleton, instanceInfo);
+    client.setLastUpdatedTime();
+    client.recalculateRevision();
+    // 发布客户端注册服务事件
+    NotifyCenter.publishEvent(new ClientOperationEvent.ClientRegisterServiceEvent(singleton, clientId));
+    // 发布元数据事件
+    NotifyCenter
+            .publishEvent(new MetadataEvent.InstanceMetadataEvent(singleton, instanceInfo.getMetadataId(), false));
+}
+```
 
-## 5. 结论
+### 4.2 事件订阅者ClientServiceIndexesManager
 
-- 7.1 总结 Nacos 的事件驱动架构
+订阅者订阅事件，那么谁是客户端注册服务事件的订阅者呢？要找到它的订阅者，就要去找继承`Subscriber`类并订阅`ClientRegisterServiceEvent`的代码，类似这样：`extends Subscriber<ClientRegisterServiceEvent>`。
+
+![image-20241204155952191](./Nacos源码分析-事件驱动架构.assets/image-20241204155952191.png)
+
+在事件类的用法中，并没有找到类似的代码，却有一段代码是添加这个事件类:`result.add(ClientOperationEvent.ClientRegisterServiceEvent.class);`;还记得上面提到了一个特殊的订阅者：`SmartSubscriber`,它可以订阅多种事件。`ClientServiceIndexesManager`继承了`SmartSubscriber`, 订阅了多个客户端操作事件，就包括客户端注册服务事件。
+
+```java
+// ClientServiceIndexesManager#subscribeTypes
+public List<Class<? extends Event>> subscribeTypes() {
+    List<Class<? extends Event>> result = new LinkedList<>();
+    // 订阅客户端注册服务事件
+    result.add(ClientOperationEvent.ClientRegisterServiceEvent.class);
+    result.add(ClientOperationEvent.ClientDeregisterServiceEvent.class);
+    result.add(ClientOperationEvent.ClientSubscribeServiceEvent.class);
+    result.add(ClientOperationEvent.ClientUnsubscribeServiceEvent.class);
+    result.add(ClientOperationEvent.ClientReleaseEvent.class);
+    return result;
+}
+```
+
+### 4.3 注册订阅者到发布器NamingEventPublisher
+
+事件的订阅者找到了，那么这个订阅者是在哪里注册到通知中心的呢，答案是它的构造函数。在构造函数中注册自身到通知中心，并且传入了一个发布器工厂参数，用来生成发布器。
+
+```java
+public ClientServiceIndexesManager() {
+    NotifyCenter.registerSubscriber(this, NamingEventPublisherFactory.getInstance());
+}
+```
+
+接着看`NotifyCenter#registerSubscriber()`。
+
+```java
+public static void registerSubscriber(final Subscriber consumer, final EventPublisherFactory factory) {
+    if (consumer instanceof SmartSubscriber) {
+        // 获取订阅的事件类型
+        for (Class<? extends Event> subscribeType : ((SmartSubscriber) consumer).subscribeTypes()) {
+            // For case, producer: defaultSharePublisher -> consumer: smartSubscriber.
+            // 是否为SlowEvent的子类
+            if (ClassUtils.isAssignableFrom(SlowEvent.class, subscribeType)) {
+                INSTANCE.sharePublisher.addSubscriber(consumer, subscribeType);
+            } else {
+                // 添加订阅者到发布器
+                addSubscriber(consumer, subscribeType, factory);
+            }
+        }
+        return;
+    }
+    
+    final Class<? extends Event> subscribeType = consumer.subscribeType();
+    if (ClassUtils.isAssignableFrom(SlowEvent.class, subscribeType)) {
+        INSTANCE.sharePublisher.addSubscriber(consumer, subscribeType);
+        return;
+    }
+    
+    addSubscriber(consumer, subscribeType, factory);
+}
+```
+
+`addSubscriber`方法会为事件匹配发布器，然后把订阅者添加到发布器上。
+
+`ClientRegisterServiceEvent`的发布器是通过发布器工厂`NamingEventPublisherFactory#apply()`创建的。并且**把发布器放入事件与发布器映射表`publisherMap`中**。
+
+```java
+private static void addSubscriber(final Subscriber consumer, Class<? extends Event> subscribeType,
+        EventPublisherFactory factory) {
+    // 类的规范名称，比如：com.alibaba.nacos.naming.core.v2.event.client.ClientOperationEvent.ClientRegisterServiceEvent
+    final String topic = ClassUtils.getCanonicalName(subscribeType);
+    synchronized (NotifyCenter.class) {
+        // 创建发布器，并放入事件与发布器映射表中
+        MapUtil.computeIfAbsent(INSTANCE.publisherMap, topic, factory, subscribeType, ringBufferSize);
+    }
+    EventPublisher publisher = INSTANCE.publisherMap.get(topic);
+  	// 订阅者添加到发布器
+    if (publisher instanceof ShardedEventPublisher) {
+        ((ShardedEventPublisher) publisher).addSubscriber(consumer, subscribeType);
+    } else {
+        publisher.addSubscriber(consumer);
+    }
+}
+```
+
+工厂为`ClientRegisterServiceEvent`创建一个发布器：`NamingEventPublisher`
+
+```java
+public EventPublisher apply(final Class<? extends Event> eventType, final Integer maxQueueSize) {
+    // Like ClientEvent$ClientChangeEvent cache by ClientEvent
+    Class<? extends Event> cachedEventType =
+            eventType.isMemberClass() ? (Class<? extends Event>) eventType.getEnclosingClass() : eventType;
+    return publisher.computeIfAbsent(cachedEventType, eventClass -> {
+        NamingEventPublisher result = new NamingEventPublisher();
+        result.init(eventClass, maxQueueSize);
+        return result;
+    });
+}
+```
+
+### 4.4 发布器发布事件
+
+现在订阅者和发布器都注册到通知中心了，处理事件的基本要素都已具备，接着看发布客户端注册服务事件。
+
+调用`publishEvent`方法匹配事件的发布器，并使用发布器发布事件。
+
+```java
+// NotifyCenter#publishEvent
+private static boolean publishEvent(final Class<? extends Event> eventType, final Event event) {
+    if (ClassUtils.isAssignableFrom(SlowEvent.class, eventType)) {
+        return INSTANCE.sharePublisher.publish(event);
+    }
+    // 事件类型
+    final String topic = ClassUtils.getCanonicalName(eventType);
+    // 从映射表取出发布器
+    EventPublisher publisher = INSTANCE.publisherMap.get(topic);
+    if (publisher != null) {
+        // 发布器发布事件
+        return publisher.publish(event);
+    }
+    if (event.isPluginEvent()) {
+        return true;
+    }
+    return false;
+}
+```
+
+### 4.5 通知订阅者
+
+客户端注册服务事件的发布器是`NamingEventPublisher`, 调用它的`pulish`方法，`publish`方法会将事件放入阻塞队列，然后调用`handleEvent`方法。
+
+```java
+private void handleEvent(Event event) {
+    Class<? extends Event> eventType = event.getClass();
+    // 事件的全部订阅者
+    Set<Subscriber<? extends Event>> subscribers = subscribes.get(eventType);
+    if (null == subscribers) {
+        if (Loggers.EVT_LOG.isDebugEnabled()) {
+            Loggers.EVT_LOG.debug("[NotifyCenter] No subscribers for slow event {}", eventType.getName());
+        }
+        return;
+    }
+    for (Subscriber subscriber : subscribers) {
+        // 通知订阅者
+        notifySubscriber(subscriber, event);
+    }
+}
+```
+
+`notifySubscriber`方法调用订阅者事件回调方法`onEvent`通知订阅者。
+
+```java
+public void notifySubscriber(Subscriber subscriber, Event event) {
+    // 调用订阅者事件回调方法
+    final Runnable job = () -> subscriber.onEvent(event);
+    // 如果订阅者有自己的线程池，使用线程池执行，否则立即执行
+    final Executor executor = subscriber.executor();
+    if (executor != null) {
+        executor.execute(job);
+    } else {
+        try {
+            job.run();
+        } catch (Throwable e) {
+            Loggers.EVT_LOG.error("Event callback exception: ", e);
+        }
+    }
+}
+```
+
+到此，客户端注册服务事件的发布订阅流程就结束了。
+
+## 5. 总结
+
+Nacos 的事件驱动架构为微服务环境中的服务管理和配置管理提供了灵活、高效的解决方案。通过将系统中的组件解耦，支持异步处理和动态响应，Nacos 能够在快速变化的环境中保持高可用性和可靠性。
+
+> 了解 Nacos 事件驱动架构，对于阅读服务注册和配置管理相关源码也很有帮助。往往是多个事件组成工作流完成一个业务流程。
+
+>  您的点赞和关注是我写作的最大动力，感谢支持！
 
 
 
@@ -162,20 +365,4 @@ private DefaultSharePublisher sharePublisher;
 - [什么是事件驱动的架构](https://www.ibm.com/cn-zh/topics/event-driven-architecture)
 - [nacos2.x的事件驱动架构](https://blog.csdn.net/likang_1167/article/details/143752764)
 
-
-
-
-## 4. 事件驱动[](https://nacos.io/zh-cn/docs/next/v2/ecology/use-nacos-with-spring/#4-事件驱动)
-
-Nacos 事件驱动 基于标准的 Spring Event / Listener 机制。 Spring 的 `ApplicationEvent` 是所有 Nacos Spring 事件的抽象超类：
-
-| Nacos Spring Event                           | Trigger                                                      |
-| -------------------------------------------- | ------------------------------------------------------------ |
-| `NacosConfigPublishedEvent`                  | After `ConfigService.publishConfig()`                        |
-| `NacosConfigReceivedEvent`                   | After`Listener.receiveConfigInfo()`                          |
-| `NacosConfigRemovedEvent`                    | After `configService.removeConfig()`                         |
-| `NacosConfigTimeoutEvent`                    | `ConfigService.getConfig()` on timeout                       |
-| `NacosConfigListenerRegisteredEvent`         | After `ConfigService.addListner()` or `ConfigService.removeListener()` |
-| `NacosConfigurationPropertiesBeanBoundEvent` | After `@NacosConfigurationProperties` binding                |
-| `NacosConfigMetadataEvent`                   | After Nacos Config operations                                |
 
