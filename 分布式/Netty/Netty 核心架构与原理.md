@@ -482,3 +482,69 @@ Netty是基于事件驱动的，比如：连接注册，连接激活；数据读
 EventLoopGroup 是用来生成 EventLoop 的，包含了一组EventLoop（可以初步理解成Netty线程池）
 
 ### ByteBuf
+
+Netty 使用 ByteBuf 来替代 Java NIO 的 ByteBuffer，它是一个强大的实现，既解决了JDK API 的局限性， 又为网络应用程序的开发者提供了更好的API。
+从结构上来说，ByteBuf 由一串字节数组构成。数组中每个字节用来存放信息，ByteBuf提供了两个索引，一个用于读取数据（**readerIndex** ），一个用于写入数据（**writerIndex**）。这两个索引通过在字节数组中移动，来定位需要读或者写信息的位置。而JDK的ByteBuffer只有一个索引，因此需要使用flip方法进行读写切换。
+
+![image-20241212144510323](./Netty 核心架构与原理.assets/image-20241212144510323.png)
+
+#### ByteBuf 的三类使用模式
+
+- 堆缓冲区（HeapByteBuf）：内存分配在JVM 堆，分配和回收速度比较快，可以被JVM自动回收，缺点是，如果进行 socket 的IO读写，需要额外做一次内存复制，将堆内存对应的缓冲区复制到内核Channel中，性能会有一定程度的下降。由于在堆上被 JVM 管理，在不被使用时可以快速释放。可以通过 ByteBuf.array() 来获取 byte[] 数据。
+
+- 直接缓冲区（DirectByteBuf）：内存分配的是堆外内存（系统内存），相比堆内存，它的分配和回收速度会慢一些，但是将它写入或从Socket Channel中读取时，由于减少了一次内存拷贝，速度比堆内存块。**Netty 默认使用 DirectByteBuf**。
+
+- 复合缓冲区（CompositeByteBuf）：顾名思义就是将两个不同的缓冲区从逻辑上合并，让使用更加方便。
+
+#### ByteBuf 的分配器
+
+Netty 提供了两种 ByteBufAllocator 的实现，分别是：
+
+- PooledByteBufAllocator：实现了 ByteBuf 的对象的池化，提高性能减少并最大限度地减少内存碎片，池化思想通过预先申请一块专用内存地址作为内存池进行管理，从而不需要每次都进行分配和释放。(只能由Netty内部自己使用)
+- UnpooledByteBufAllocator：没有实现对象的池化，每次会生成新的对象实例
+
+### Future/Promise异步模型
+
+在 Netty 中，异步模型的主要思想是允许某些操作在后台处理，而不会阻塞调用线程。
+
+- Future: 表示一个异步计算的结果。它继承自 JUC 包下的 Future，扩展了一些好用的 API，可以向 Future 添加监听者，当程序执行完成时通知监听者。
+
+- Promise: 是一种可写的 Future，它允许用户手动设置结果或异常。Future 只是增加了监听器，整个异步的状态，是不能进行设置和修改的，Promise接口扩展了 Future接口，可以设置异步执行的结果。在IO操作过程，如果顺利完成、或者发生异常，都可以设置Promise的结果，并且通知Promise的Listener们。
+
+在 Java 的 Future 中，业务逻辑为一个 Callable 或 Runnable 实现类，该类的 call() 或 run() 执行完毕才能返回处理结果，在 Promise 机制中，可以在业务逻辑中人工设置业务逻辑的成功与失败。
+
+
+
+### TCP 粘包拆包
+
+粘包是指多个消息被合并成一个包发送，而拆包则是指一个消息被分成多个包发送粘包是多个数据包粘在一起，如在应用层发送的两个消息是 ABC，DEF，粘在一起之后是 ABCDEF，拆包是一个数据包被拆开了，如 AB，CD，EF。
+
+**根本原因**：TCP 协议是面向连接的、可靠的、基于字节流的传输层通信协议，是一种流式协议，消息无边界。
+
+#### Netty 解决粘包拆包
+
+Netty提供了针对封装成帧这种形式下不同方式的拆包器，所谓的拆包其实就是数据的解码,所谓解码就是将网络中的一些原始数据解码成上层应用的数据，那对应在发送数据的时候要按照同样的方式进行数据的编码操作然后发送到网络中。
+
+| 作用                   | 解码                         | 编码                                   |
+| ---------------------- | ---------------------------- | -------------------------------------- |
+| 固定长度               | FixedLengthFrameDecoder      | 不需要，实现简单                       |
+| 分隔符                 | DelimiterBasedFrameDecoder   | 应用层在每条消息后加上对应的分隔符即可 |
+| 固定长度字段存消息长度 | LengthFieldBasedFrameDecoder | LengthFieldPrepender                   |
+
+重点是 LengthFieldBasedFrameDecoder，可以理解为一个包由 header 和 body 组成，在 header 中定义了消息长度。
+
+### 二次编解码 codec
+
+我们把解决半包粘包问题的常用三种解码器叫一次解码器，其作用是将原始数据流(可能会出现粘包和半包的数据流)转换为用户数据(ByteBuf中存储)，但仍然是字节数据，所以我们需要二次解码器将字节数组转换为 Java对象，或者将将一种格式转化为另一种格式，方便上层应用程序使用。
+一次解码器继承自：ByteToMessageDecoder；二次解码器继承自：MessageToMessageDecoder；但他们的本质都是继承 ChannelInboundHandlerAdapter。
+
+
+
+常用的二次编解码器：
+
+
+
+![image-20241212164551482](./Netty 核心架构与原理.assets/image-20241212164551482.png)
+
+![image-20241212164603592](./Netty 核心架构与原理.assets/image-20241212164603592.png)
+

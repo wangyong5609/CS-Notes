@@ -246,3 +246,5 @@ Reactor 模式有两个核心组成部分：
 
 [45 张图深度解析 Netty 架构与原理](https://cloud.tencent.com/developer/article/1754078)
 
+[肝了一个月的Netty知识点（上）](https://juejin.cn/post/6921858121774137352)
+
