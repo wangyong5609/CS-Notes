@@ -56,7 +56,7 @@ Netty线程模型是基于Reactor模型实现的，对Reactor三种模式都有�
 
 ### 工作流程
 
-1. Netty 抽象出两组线程池：BossGroup 和 WorkerGroup，每个线程池中都有EventLoop 线程（可以是OIO,NIO,AIO）。BossGroup中的线程专门负责和客户端建立连接，WorkerGroup 中的线程专门负责处理连接上的读写, EventLoopGroup 相当于一个事件循环组，这个组中含有多个事件循环
+1. Netty 抽象出两组线程池：BossGroup 和 WorkerGroup，每个线程池中都有EventLoop 线程。BossGroup中的线程专门负责和客户端建立连接，WorkerGroup 中的线程专门负责处理连接上的读写, EventLoopGroup 相当于一个事件循环组，这个组中含有多个事件循环
 2. EventLoop 表示一个不断循环的执行事件处理的线程，每个EventLoop 都包含一个 Selector，用于监听注册在其上的 Socket 网络连接（Channel）。
 3. 每个 Boss EventLoop 中循环执行以下三个步骤：
    1. select：轮训注册在其上的 ServerSocketChannel 的 accept 事件（OP_ACCEPT 事件）
@@ -494,7 +494,7 @@ Netty 使用 ByteBuf 来替代 Java NIO 的 ByteBuffer，它是一个强大的�
 
 - 直接缓冲区（DirectByteBuf）：内存分配的是堆外内存（系统内存），相比堆内存，它的分配和回收速度会慢一些，但是将它写入或从Socket Channel中读取时，由于减少了一次内存拷贝，速度比堆内存块。**Netty 默认使用 DirectByteBuf**。
 
-- 复合缓冲区（CompositeByteBuf）：顾名思义就是将两个不同的缓冲区从逻辑上合并，让使用更加方便。
+- 复合缓冲区（CompositeByteBuf）：顾名思义就是将两个不同的缓冲区从逻辑上合并，只保存缓冲区的引用，不实际复制缓冲区数据。
 
 #### ByteBuf 的分配器
 
@@ -509,7 +509,7 @@ Netty 提供了两种 ByteBufAllocator 的实现，分别是：
 
 - Future: 表示一个异步计算的结果。它继承自 JUC 包下的 Future，扩展了一些好用的 API，可以向 Future 添加监听者，当程序执行完成时通知监听者。
 
-- Promise: 是一种可写的 Future，它允许用户手动设置结果或异常。Future 只是增加了监听器，整个异步的状态，是不能进行设置和修改的，Promise接口扩展了 Future接口，可以设置异步执行的结果。在IO操作过程，如果顺利完成、或者发生异常，都可以设置Promise的结果，并且通知Promise的Listener们。
+- Promise: 是一种可写的 Future，它允许用户手动设置结果或异常。Future 只是增加了监听器，整个异步的状态，是不能进行设置和修改的，Promise接口扩展了 Future接口，可以设置异步执行的结果。在IO操作过程，如果顺利完成、或者发生异常，都可以设置 Promise 的结果，并且通知 Promise 的 Listener 们。
 
 在 Java 的 Future 中，业务逻辑为一个 Callable 或 Runnable 实现类，该类的 call() 或 run() 执行完毕才能返回处理结果，在 Promise 机制中，可以在业务逻辑中人工设置业务逻辑的成功与失败。
 
@@ -518,6 +518,8 @@ Netty 提供了两种 ByteBufAllocator 的实现，分别是：
 ### TCP 粘包拆包
 
 粘包是指多个消息被合并成一个包发送，而拆包则是指一个消息被分成多个包发送粘包是多个数据包粘在一起，如在应用层发送的两个消息是 ABC，DEF，粘在一起之后是 ABCDEF，拆包是一个数据包被拆开了，如 AB，CD，EF。
+
+
 
 **根本原因**：TCP 协议是面向连接的、可靠的、基于字节流的传输层通信协议，是一种流式协议，消息无边界。
 
