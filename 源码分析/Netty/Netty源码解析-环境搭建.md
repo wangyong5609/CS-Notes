@@ -25,13 +25,13 @@ fork 仓库有以下好处：
 - Forked 仓库允许您使用 Git 的版本控制功能，跟踪更改和管理不同版本的代码。
 - 您可以定期从原始仓库拉取更新，以保持您的 fork 与主项目的同步。
 
-![image-20241213221407795](./Netty%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.assets/image-20241213221407795.png)
+![image-20241213221407795](https://qny.bbbwdc.com/blog/image-20241213221407795.png)
 
 ### 下载源码压缩包
 
 从GitHub官网下载压缩包文件。
 
-![image-20241213222044545](./Netty%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.assets/image-20241213222044545.png)
+![image-20241213222044545](https://qny.bbbwdc.com/blog/image-20241213222044545.png)
 
 ## 2.编译项目
 
@@ -46,15 +46,15 @@ fork 仓库有以下好处：
 - Maven：3.9.2
 - JDK：1.8
 
-![image-20241213223616144](./Netty%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.assets/image-20241213223616144.png)
+![image-20241213223616144](https://qny.bbbwdc.com/blog/image-20241213223616144.png)
 
 配置 JDK，否则编译可能出现包依赖找不到的问题。
 
-![image-20241213223505115](./Netty%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.assets/image-20241213223505115.png)
+![image-20241213223505115](https://qny.bbbwdc.com/blog/image-20241213223505115.png)
 
 ### 编译项目
 
-![image-20241213223716716](./Netty%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.assets/image-20241213223716716.png)
+![image-20241213223716716](https://qny.bbbwdc.com/blog/image-20241213223716716.png)
 
 ## 3.启动示例
 
@@ -62,11 +62,11 @@ fork 仓库有以下好处：
 
 我这里启动了一个 websocket 示例：`WebSocketServer`,`WebSocketClient`。你可以在浏览器访问`http://localhost:8080/`访问服务端玩玩。
 
-![image-20241213225034152](./Netty%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.assets/image-20241213225034152.png)
+![image-20241213225034152](https://qny.bbbwdc.com/blog/image-20241213225034152.png)
 
 也可以在控制台发送消息
 
-![image-20241213225146975](./Netty%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90-%E7%8E%AF%E5%A2%83%E6%90%AD%E5%BB%BA.assets/image-20241213225146975.png)
+![image-20241213225146975](https://qny.bbbwdc.com/blog/image-20241213225146975.png)
 
 好了，环境搭建完毕，后面就开始正式解析源码了。
 
