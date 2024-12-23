@@ -861,3 +861,124 @@ private long tooLongFrameLength; // 需要丢弃的字节数
 
 private long bytesToDiscard; // 累计丢弃的字节数
 ```
+
+## 09 数据传输：writeAndFlush 处理流程剖析
+
+### writeAndFlush 事件传播分析
+
+writeAndFlush 是特有的出站操作，它是从 Pipeline 的 Tail 节点开始传播的，然后一直向前传播到 Head 节点
+
+```java
+@Override
+
+public final ChannelFuture writeAndFlush(Object msg) {
+
+    return tail.writeAndFlush(msg);
+
+}
+```
+
+继续跟进 tail.writeAndFlush 的源码，最终会定位到 AbstractChannelHandlerContext 中的 write 方法。该方法是 writeAndFlush 的**核心逻辑**，具体见以下源码。
+
+```markdown
+private void write(Object msg, boolean flush, ChannelPromise promise) {
+
+    // ...... 省略部分非核心代码 ......
+    // 找到 Pipeline 链表中下一个 Outbound 类型的 ChannelHandler 节点
+
+    final AbstractChannelHandlerContext next = findContextOutbound(flush ?
+
+            (MASK_WRITE | MASK_FLUSH) : MASK_WRITE);
+
+    final Object m = pipeline.touch(msg, next);
+
+    EventExecutor executor = next.executor();
+
+    // 判断当前线程是否是 NioEventLoop 中的线程
+
+    if (executor.inEventLoop()) {
+
+        if (flush) {
+
+            // 因为 flush == true，所以流程走到这里
+
+            next.invokeWriteAndFlush(m, promise);
+
+        } else {
+
+            next.invokeWrite(m, promise);
+
+        }
+
+    } else {
+
+        final AbstractWriteTask task;
+
+        if (flush) {
+
+            task = WriteAndFlushTask.newInstance(next, m, promise);
+
+        }  else {
+
+            task = WriteTask.newInstance(next, m, promise);
+
+        }
+
+        if (!safeExecute(executor, task, promise, m)) {
+
+            task.cancel();
+
+        }
+
+    }
+
+}
+```
+
+write 方法的核心逻辑主要分为三个重要步骤
+
+1. 调用 findContextOutbound 方法找到 Pipeline 链表中下一个 Outbound 类型的 ChannelHandler。
+
+2. 通过 inEventLoop 方法判断当前线程的身份标识，如果当前线程和 EventLoop 分配给当前 Channel 的线程是同一个线程的话，那么所提交的任务将被立即执行。否则当前的操作将被封装成一个 Task 放入到 EventLoop 的任务队列，稍后执行。所以 writeAndFlush 是否是线程安全的呢，你心里有答案了吗？
+
+2. 因为 flush== true，将会直接执行 next.invokeWriteAndFlush(m, promise) 这行代码，我们跟进去源码。发现最终会它会执行下一个 ChannelHandler 节点的 write 方法，那么流程又回到了 到 AbstractChannelHandlerContext 中重复执行 write 方法，继续寻找下一个 Outbound 节点。
+
+```scss
+private void invokeWriteAndFlush(Object msg, ChannelPromise promise) {
+
+    if (invokeHandler()) {
+
+        invokeWrite0(msg, promise);
+
+        invokeFlush0();
+
+    } else {
+
+        writeAndFlush(msg, promise);
+
+    }
+
+}
+
+private void invokeWrite0(Object msg, ChannelPromise promise) {
+
+    try {
+
+        ((ChannelOutboundHandler) handler()).write(this, msg, promise);
+
+    } catch (Throwable t) {
+
+        notifyOutboundHandlerException(t, promise);
+
+    }
+
+}
+```
+
+编码器的 encode 方法又是什么时机被执行的呢？
+
+因为我们在实现编码器的时候都会继承 MessageToByteEncoder 抽象类，MessageToByteEncoder 重写了 ChanneOutboundHandler 的 write 方法，其中会调用子类实现的 encode 方法完成数据编码。
+
+
+
+那么最终数据是如何写到 Socket 底层的呢？我们一起继续向下分析吧。
