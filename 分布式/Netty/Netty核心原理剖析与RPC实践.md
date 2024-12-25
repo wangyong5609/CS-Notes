@@ -982,3 +982,91 @@ private void invokeWrite0(Object msg, ChannelPromise promise) {
 
 
 那么最终数据是如何写到 Socket 底层的呢？我们一起继续向下分析吧。
+
+### 刷新 Buffer 队列
+
+当执行完 write 写操作之后，invokeFlush0 会触发 flush 动作，与 write 方法类似，flush 方法同样会从 Tail 节点开始传播到 Head 节点。
+
+ flush 的核心逻辑主要分为两个步骤：addFlush 和 flush0
+
+writeAndFlush 的时序图：
+
+![图片15.png](./Netty核心原理剖析与RPC实践.assets/Ciqc1F-uZ4iAYZDxAAROuJN6ruk510.png)
+
+### 总结
+
+本节课我们深入分析了 writeAndFlush 的处理流程，可以总结以下三点：
+
+- writeAndFlush 属于出站操作，它是从 Pipeline 的 Tail 节点开始进行事件传播，一直向前传播到 Head 节点。不管在 write 还是 flush 过程，Head 节点都中扮演着重要的角色。
+- write 方法并没有将数据写入 Socket 缓冲区，只是将数据写入到 ChannelOutboundBuffer 缓存中，ChannelOutboundBuffer 缓存内部是由单向链表实现的。
+- flush 方法才最终将数据写入到 Socket 缓冲区。
+
+## 10 双刃剑：合理管理 Netty 堆外内存
+
+### 为什么需要堆外内存
+
+堆外内存不受 JVM 虚拟机管理，直接由操作系统管理。
+
+![图片1.png](./Netty核心原理剖析与RPC实践.assets/CgqCHl-06zuAdxB_AAKnPyI9NhA898.png)
+
+堆外内存和堆内内存各有利弊，这里我针对其中重要的几点进行说明。
+
+1. 堆内内存由 JVM GC 自动回收内存，降低了 Java 用户的使用心智，但是 GC 是需要时间开销成本的，堆外内存由于不受 JVM 管理，所以在一定程度上可以降低 GC 对应用运行时带来的影响。
+2. 堆外内存需要手动释放，这一点跟 C/C++ 很像，稍有不慎就会造成应用程序内存泄漏，当出现内存泄漏问题时排查起来会相对困难。
+3. 当进行网络 I/O 操作、文件读写时，堆内内存都需要转换为堆外内存，然后再与底层设备进行交互，这一点在介绍 writeAndFlush 的工作原理中也有提到，所以直接使用堆外内存可以减少一次内存拷贝。
+4. 堆外内存可以实现进程之间、JVM 多实例之间的数据共享。
+
+由此可以看出，如果你想实现高效的 I/O 操作、缓存常用的对象、降低 JVM GC 压力，堆外内存是一个非常不错的选择。
+
+### 堆外内存的分配
+
+Java 中堆外内存的分配方式有两种：**ByteBuffer#allocateDirect**和**Unsafe#allocateMemory**。
+
+首先我们介绍下 Java NIO 包中的 ByteBuffer 类的分配方式，使用方式如下：
+
+```java
+// 分配 10M 堆外内存
+
+ByteBuffer buffer = ByteBuffer.allocateDirect(10 * 1024 * 1024); 
+```
+
+跟进 ByteBuffer.allocateDirect 源码，发现其中直接调用的 DirectByteBuffer 构造函数
+
+
+
+下图DirectByteBuffer 的内存引用情况，堆内存的 DirectByteBuffer 对象包含堆外内存的地址、大小等属性，同时还会创建对应的 Cleaner 对象，通过 ByteBuffer 分配的堆外内存不需要手动回收，它可以被 JVM 自动回收。当堆内的 DirectByteBuffer 对象被 GC 回收时，Cleaner 就会用于回收对应的堆外内存。
+
+![图片2.png](./Netty核心原理剖析与RPC实践.assets/CgqCHl-060uANzIXAAK8c10kJxc818.png)
+
+从 DirectByteBuffer 的构造函数中可以看出，真正分配堆外内存的逻辑还是通过 unsafe.allocateMemory(size)。
+
+Unsafe 是一个非常不安全的类，它用于执行内存访问、分配、修改等**敏感操作**，可以越过 JVM 限制的枷锁。Unsafe 最初并不是为开发者设计的，使用它时虽然可以获取对底层资源的控制权，但也失去了安全性的保证，所以使用 Unsafe 一定要慎重。
+
+
+
+通过反射可以获得 Unsafe 实例，然后通过 allocateMemory 方法分配堆外内存，
+
+```csharp
+// 分配 10M 堆外内存
+
+long address = unsafe.allocateMemory(10 * 1024 * 1024);
+```
+
+与 DirectByteBuffer 不同的是，Unsafe#allocateMemory 所分配的内存必须自己手动释放，否则会造成内存泄漏，这也是 Unsafe 不安全的体现。Unsafe 同样提供了内存释放的操作：
+
+```csharp
+unsafe.freeMemory(address);
+```
+
+到目前为止，我们了解了堆外内存分配的两种方式，对于 Java 开发者而言，常用的是 ByteBuffer.allocateDirect 分配方式。
+
+### 堆外内存的回收
+
+我们试想这么一种场景，因为 DirectByteBuffer 对象有可能长时间存在于堆内内存，所以它很可能晋升到 JVM 的老年代，所以这时候 DirectByteBuffer 对象的回收需要依赖 Old GC 或者 Full GC 才能触发清理。如果长时间没有 Old GC 或者 Full GC 执行，那么堆外内存即使不再使用，也会一直在占用内存不释放，很容易将机器的物理内存耗尽，这是相当危险的。
+
+- 通过 JVM 参数 -XX:MaxDirectMemorySize 指定堆外内存的上限大小，当堆外内存的大小超过该阈值时，就会触发一次 Full GC 进行清理回收
+- ByteBuffer.allocateDirect 分配的过程中，如果没有足够的空间分配堆外内存，在 Bits.reserveMemory 方法中也会主动调用 System.gc() 强制执行 Full GC
+
+
+
+ DirectByteBuffer 在初始化时会创建一个 Cleaner 对象，它会负责堆外内存的回收工作。
