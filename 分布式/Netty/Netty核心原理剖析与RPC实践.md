@@ -1070,3 +1070,97 @@ unsafe.freeMemory(address);
 
 
  DirectByteBuffer 在初始化时会创建一个 Cleaner 对象，它会负责堆外内存的回收工作。
+
+
+
+## 11 另起炉灶：Netty 数据传输载体 ByteBuf 详解
+
+### 为什么选择 ByteBuf
+
+我们首先介绍下 JDK NIO 的 ByteBuffer，才能知道 ByteBuffer 有哪些缺陷和痛点。下图展示了 ByteBuffer 的内部结构：
+
+![Netty11](./Netty核心原理剖析与RPC实践.assets/Ciqc1F-3ukmAImo_AAJEEbA2rts301.png)
+
+从图中可知，ByteBuffer 包含以下四个基本属性：
+
+- mark：为某个读取过的关键位置做标记，方便回退到该位置；
+- position：当前读取的位置；
+- limit：buffer 中有效的数据长度大小；
+- capacity：初始化时的空间容量。
+
+以上**四个基本属性**的关系是：**mark <= position <= limit <= capacity**。
+
+ByteBuffer 的缺点：
+
+- ByteBuffer 分配的长度是固定的，无法动态扩缩容，所以很难控制需要分配多大的容量
+- 开发者心智负担大。ByteBuffer 只能通过 position 获取当前可操作的位置，因为读写共用的 position 指针，所以需要频繁调用 flip、rewind 方法切换读写状态
+
+Netty 重新实现了一个性能更高、易用性更强的 ByteBuf，相比于 ByteBuffer 它提供了很多非常酷的特性：
+
+- 容量可以按需动态扩展，类似于 StringBuffer；
+- 读写采用了不同的指针，读写模式可以随意切换，不需要调用 flip 方法；
+- 通过内置的复合缓冲类型可以实现零拷贝；
+- 支持引用计数；
+- 支持缓存池。
+
+### ByteBuf 内部结构
+
+
+
+![Netty11（2）.png](./Netty核心原理剖析与RPC实践.assets/CgqCHl-3uraAAhvwAASZGuNRMtA960.png)
+
+
+
+### 引用计数
+
+ByteBuf 是基于引用计数设计的，它实现了 ReferenceCounted 接口，ByteBuf 的生命周期是由引用计数所管理。只要引用计数大于 0，表示 ByteBuf 还在被使用；当 ByteBuf 不再被其他对象所引用时，引用计数为 0，那么代表该对象可以被释放。
+
+当新创建一个 ByteBuf 对象时，它的初始引用计数为 1，当 ByteBuf 调用 release() 后，引用计数减 1，所以不要误以为调用了 release() 就会保证 ByteBuf 对象一定会被回收
+
+### ByteBuf 分类
+
+ByteBuf 有多种实现类，每种都有不同的特性，下图是 ByteBuf 的家族图谱，可以划分为三个不同的维度：**Heap/Direct**、**Pooled/Unpooled**和**Unsafe/非 Unsafe**，我逐一介绍这三个维度的不同特性。
+
+![image](./Netty核心原理剖析与RPC实践.assets/Ciqc1F-3h3WAMF4CAAe4IOav4SA876.png)
+
+**Heap/Direct 就是堆内和堆外内存**。Heap 指的是在 JVM 堆内分配，底层依赖的是字节数据；Direct 则是堆外内存，不受 JVM 限制，分配方式依赖 JDK 底层的 ByteBuffer。
+
+**Pooled/Unpooled 表示池化还是非池化内存**。Pooled 是从预先分配好的内存中取出，使用完可以放回 ByteBuf 内存池，等待下一次分配。而 Unpooled 是直接调用系统 API 去申请内存，确保能够被 JVM GC 管理回收。
+
+**Unsafe/非 Unsafe 的区别在于操作方式是否安全。** Unsafe 表示每次调用 JDK 的 Unsafe 对象操作物理内存，依赖 offset + index 的方式操作数据。非 Unsafe 则不需要依赖 JDK 的 Unsafe 对象，直接通过数组下标的方式操作数据。
+
+### ByteBuf 核心 API
+
+#### 指针操作 API
+
+- **readerIndex() & writeIndex()**
+
+readerIndex() 返回的是当前的读指针的 readerIndex 位置，writeIndex() 返回的当前写指针 writeIndex 位置。
+
+- **markReaderIndex() & resetReaderIndex()**
+
+markReaderIndex() 用于保存 readerIndex 的位置，resetReaderIndex() 则将当前 readerIndex 重置为之前保存的位置。
+
+这对 API 在实现协议解码时最为常用，例如在上述自定义解码器的源码中，在读取协议内容长度字段之前，先使用 markReaderIndex() 保存了 readerIndex 的位置，如果 ByteBuf 中可读字节数小于长度字段的值，则表示 ByteBuf 还没有一个完整的数据包，此时直接使用 resetReaderIndex() 重置 readerIndex 的位置。
+
+此外对应的写指针操作还有 markWriterIndex() 和 resetWriterIndex()，与读指针的操作类似，我就不再一一赘述了。
+
+#### 数据读写 API
+
+- **isReadable()**
+
+- **readableBytes()**
+
+- **readBytes(byte[] dst) & writeBytes(byte[] src)**
+
+- **readByte() & writeByte(int value)** 
+
+- **getByte(int index) & setByte(int index, int value)**
+
+#### 内存管理 API
+
+- **release() & retain()**
+
+- **slice() & duplicate()**
+
+- **copy()**
